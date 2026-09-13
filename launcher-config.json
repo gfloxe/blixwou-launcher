@@ -1,13 +1,31 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.1.0",
-  "server": {"host": "BLIXWOU.exaroton.me", "port": 48255},
+  "appVersion": "0.1.1",
+  "server": {
+    "host": "BLIXWOU.exaroton.me",
+    "port": 48255
+  },
   "minecraft": "1.21.1",
   "neoforge": "21.1.250",
   "javaMajor": 21,
   "manifestUrl": "https://raw.githubusercontent.com/gfloxe/BLIXWOU/main/manifest.json",
-  "microsoft": {"clientId": "75252e49-3786-474f-ae9d-214ff6191ce9", "redirectUri": "http://localhost:8765/callback"},
-  "socials": {"discord": null, "website": null, "tiktok": null, "youtube": null},
-  "launcherUpdate": {"appcastUrl": null, "ed25519PublicKey": null},
-  "distributionProposal": {"owner": "gfloxe", "repository": "BLIXWOU", "created": true}
+  "microsoft": {
+    "clientId": "75252e49-3786-474f-ae9d-214ff6191ce9",
+    "redirectUri": "http://localhost:8765/callback"
+  },
+  "socials": {
+    "discord": null,
+    "website": null,
+    "tiktok": null,
+    "youtube": null
+  },
+  "launcherUpdate": {
+    "appcastUrl": "https://raw.githubusercontent.com/gfloxe/blixwou-launcher/main/appcast.xml",
+    "ed25519PublicKey": "5Hju42KcDdq4t/Cu1yyrLnTBT/rwmkHemtn9XbsFZl8="
+  },
+  "distributionProposal": {
+    "owner": "gfloxe",
+    "repository": "BLIXWOU",
+    "created": true
+  }
 }

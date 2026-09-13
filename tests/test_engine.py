@@ -21,6 +21,8 @@ def test_arguments_use_dedicated_folder_offline_identity_and_quickplay(tmp_path)
     args = build_command(tmp_path, version, "C:/Java 21/bin/java.exe", DEFAULT_SETTINGS, offline_profile("Steve"), {"host": "BLIXWOU.exaroton.me", "port": 48255})
     assert args[0] == "C:/Java 21/bin/java.exe"
     assert "-Xmx4096M" in args
+    assert "-Xms4096M" in args
+    assert "-XX:+UseG1GC" in args
     assert args[args.index("--gameDir") + 1] == str(tmp_path / "game")
     assert "--quickPlayMultiplayer" not in args
     assert "--server" not in args

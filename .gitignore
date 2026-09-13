@@ -7,6 +7,14 @@ output/
 *.spec
 *.key
 *.pfx
+*.dpapi
+profile.json
+tokens*.json
+token.json
+.env
+.env.*
+skins/
+game/
 *.part
 vendor/*.dll
 vendor/*.zip

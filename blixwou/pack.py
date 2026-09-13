@@ -2,6 +2,7 @@
 import os
 import base64
 import json
+import logging
 import re
 import shutil
 from pathlib import Path, PurePosixPath
@@ -119,6 +120,9 @@ class PackManager:
                     ownership.append(previous[item["path"].casefold()])
                 continue
             if target.exists() and item["path"].casefold() not in previous:
+                if target.is_file() and digest(target) == item["sha256"]:
+                    ownership.append(item)
+                    continue
                 if not item['path'].startswith('shaderpacks/') or not target.is_file():
                     raise LauncherError(f"Fichier personnel déjà présent : {item['path']}. Déplacez-le avant d’installer le pack.")
                 existing_hash = digest(target)
@@ -172,6 +176,15 @@ class PackManager:
             if p.is_file():
                 p.unlink()
         self.progress("Pack à jour", 1, 1)
+        orphans = []
+        mods = self.game / "mods"
+        if mods.is_dir() and not mods.is_symlink() and not mods.is_junction():
+            for path in sorted(mods.iterdir()):
+                relative = "mods/" + path.name
+                if path.suffix.lower() == ".jar" and relative.casefold() not in current and relative.casefold() not in previous:
+                    orphans.append(relative)
+                    logging.warning("Mod hors pack conservé : %s", relative)
+        self.progress("Mods hors pack : " + ", ".join(orphans) if orphans else "Mods hors pack : aucun", 0, 0)
         return manifest
 
     def fetch_and_sync(self, url):

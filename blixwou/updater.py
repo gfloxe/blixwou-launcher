@@ -26,6 +26,8 @@ class LauncherUpdater:
             "win_sparkle_set_app_details": [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p],
             "win_sparkle_set_lang": [ctypes.c_char_p],
             "win_sparkle_init": [], "win_sparkle_cleanup": [],
+            "win_sparkle_set_automatic_check_for_updates": [ctypes.c_int],
+            "win_sparkle_check_update_without_ui": [],
         }
         for name, args in signatures.items():
             getattr(dll, name).argtypes = args
@@ -42,7 +44,9 @@ class LauncherUpdater:
         if dll.win_sparkle_set_eddsa_public_key(config["ed25519PublicKey"].encode("ascii")) != 1:
             raise LauncherError("WinSparkle a refusé la clé publique de mise à jour.")
         dll.win_sparkle_set_lang(b"fr")
+        dll.win_sparkle_set_automatic_check_for_updates(1)
         dll.win_sparkle_init()
+        dll.win_sparkle_check_update_without_ui()
         self.dll = dll
 
     def close(self):

@@ -1,5 +1,7 @@
 #define AppName "BLIXWOU"
-#define AppVersion "0.1.0"
+#ifndef AppVersion
+  #error AppVersion must be supplied by tools/build_windows.ps1
+#endif
 
 [Setup]
 AppId={{CD30760D-C9B2-44EA-A7E2-4468C8A2F98B}
@@ -49,6 +51,7 @@ Name: "{autodesktop}\BLIXWOU"; Filename: "{app}\BLIXWOU.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\BLIXWOU.exe"; Description: "Ouvrir BLIXWOU"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\BLIXWOU.exe"; Flags: nowait; Check: WizardSilent
 
 ; No UninstallDelete entry for %LOCALAPPDATA%\BLIXWOU:
 ; game data, screenshots, personal settings and saves are preserved.

@@ -11,7 +11,7 @@ import zipfile
 import minecraft_launcher_lib
 from minecraft_launcher_lib import install, command
 
-from .config import LauncherError, atomic_json, read_json
+from .config import LauncherError, atomic_json, read_json, load_config
 from .java import ensure_java, HIDDEN
 from .network import download, get_json, request, digest, https_url
 from .process_guard import require_game_stopped, record_game
@@ -153,8 +153,15 @@ def build_command(root, version_id, java, settings, profile, server):
     options = {
         "username": profile["name"], "uuid": profile["id"], "token": profile["access_token"],
         "executablePath": java, "gameDirectory": str(root / "game"),
-        "jvmArguments": ["-Xms512M", f"-Xmx{settings['ramMb']}M"],
-        "launcherName": "BLIXWOU", "launcherVersion": "0.1.0",
+        "jvmArguments": [
+            f"-Xms{settings['ramMb']}M", f"-Xmx{settings['ramMb']}M",
+            "-XX:+UseG1GC", "-XX:+UnlockExperimentalVMOptions", "-XX:+ParallelRefProcEnabled",
+            "-XX:MaxGCPauseMillis=40", "-XX:G1NewSizePercent=25", "-XX:G1MaxNewSizePercent=50",
+            "-XX:G1HeapRegionSize=16M", "-XX:G1ReservePercent=20", "-XX:G1MixedGCCountTarget=3",
+            "-XX:InitiatingHeapOccupancyPercent=20", "-XX:G1MixedGCLiveThresholdPercent=90",
+            "-XX:SurvivorRatio=32", "-XX:MaxTenuringThreshold=1", "-XX:+PerfDisableSharedMem",
+        ],
+        "launcherName": "BLIXWOU", "launcherVersion": load_config()["appVersion"],
         "customResolution": True, "resolutionWidth": str(settings["width"]), "resolutionHeight": str(settings["height"]),
     }
     args = command.get_minecraft_command(version_id, str(root / "minecraft"), options)

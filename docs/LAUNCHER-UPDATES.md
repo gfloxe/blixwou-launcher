@@ -1,46 +1,27 @@
-# Mises à jour du launcher
+# Publier les mises à jour BLIXWOU
 
-Les mises à jour du **pack** passent par son manifeste. Les mises à jour du **programme BLIXWOU** passent par WinSparkle, son flux appcast et un nouvel installateur. Un modpack ne peut pas remplacer le programme, la DLL WinSparkle ou sa clé publique.
+La version de référence est `appVersion` dans launcher-config.json. Le script aligne pyproject.toml et le compilateur transmet la version à Inno Setup. Ne changez pas l’AppId.
 
-WinSparkle 0.9.4 x64 est téléchargé depuis sa Release officielle par `tools/bootstrap_vendor.py`. Son archive est épinglée à une empreinte SHA-256 récupérée depuis les métadonnées de cette Release. Le fournisseur et ses licences figurent dans `THIRD-PARTY.md`. La DLL est chargée par chemin absolu à l’intérieur de l’application empaquetée.
-
-## Première configuration
-
-1. Exécuter `tools/bootstrap_vendor.py` pour obtenir la DLL et `winsparkle-tool.exe`.
-2. Générer la paire de clés **dans un dossier privé hors du dépôt et hors du pack** :
+Depuis le dossier du projet, avec GitHub CLI déjà connecté et l’identité Git configurée :
 
 ```powershell
-.\vendor\winsparkle-tool.exe generate-key --file 'C:\chemin-prive\blixwou-update.key'
+.\tools\release.ps1 -Version 0.1.1 -PrivateKeyFile 'C:\chemin-prive\blixwou-update.key'
 ```
 
-La clé publique est affichée par l’outil. La copier dans `launcherUpdate.ed25519PublicKey`. Sauvegarder la clé privée hors ligne ; ne jamais la mettre sur GitHub, dans le launcher ou dans une pièce jointe de conversation.
+Le script construit avec les contrôles Release, signe les octets définitifs avec Ed25519, vérifie la signature, génère l’appcast, publie l’installateur dans gfloxe/blixwou-launcher, puis seulement publie appcast.xml sur main. Une Release existante n’est jamais écrasée. Un dossier output/blixwou-launcher déjà présent doit être archivé avant une nouvelle publication. En cas d’échec, les versions sources sont restaurées ; inspectez les opérations distantes éventuellement déjà réussies avant toute reprise.
 
-3. Choisir une URL HTTPS stable pour `appcast.xml`, dans un dépôt de publication du launcher. `gfloxe/blixwou-launcher` peut être utilisé s’il est créé ; ce nom n’est **pas un dépôt existant fourni**. Renseigner `launcherUpdate.appcastUrl` uniquement après avoir publié le flux.
-4. Embarquer la clé publique et l’URL dans la première version diffusée. Sans ces deux paramètres, l’édition de développement laisse WinSparkle désactivé. Une clé absente, invalide ou refusée par la DLL empêche son activation.
+La clé privée reste hors du projet. Seul winsparkle-tool reçoit son chemin. Ne la copiez jamais dans le dépôt. Les outils nécessaires sont déjà présents, notamment vendor/inno/ISCC.exe et GitHub CLI dans Program Files.
 
-## Signer et publier
-
-1. Augmenter la version du launcher dans les fichiers indiqués dans le README.
-2. Construire l’exécutable et l’installateur Inno Setup. Tester sur Windows x64.
-3. Si vous possédez un certificat Authenticode, signer l’exécutable et l’installateur avec votre propre certificat et un horodatage, en utilisant SignTool/Windows SDK. La version fournie est non signée Authenticode : aucun certificat d’éditeur n’a été fourni. Cette signature Windows est distincte d’Ed25519 et améliore l’identification de l’éditeur ; ne fabriquez pas de signature de confiance.
-4. **Après toute signature Authenticode**, signer les octets définitifs de l’installateur avec WinSparkle :
+## Essai sans publication
 
 ```powershell
-.\vendor\winsparkle-tool.exe sign --help
-# Avec la syntaxe confirmée par l’outil :
-.\vendor\winsparkle-tool.exe sign --private-key-file 'C:\chemin-prive\blixwou-update.key' .\dist\installer\BLIXWOU-Setup-0.1.0-x64.exe
+.\tools\release.ps1 -Version 0.1.1 -PrivateKeyFile 'C:\temp\cle-jetable.key' -DryRun -PublicKeyOverride '<clé publique jetable>'
 ```
 
-5. Créer l’appcast avec `tools/make_appcast.py`, en passant le fichier final, sa version, sa vraie URL de Release et la signature produite. Exemple de commande à remplir avec des valeurs réelles :
+DryRun construit et signe réellement avec la clé jetable, écrit output/appcast.xml, mais ne clone ni ne publie rien. Il restaure ensuite les versions sources. PublicKeyOverride est interdit en publication réelle et ne change pas la clé embarquée. L’installateur et l’appcast issus de cet essai ne doivent pas être distribués : la signature jetable ne correspond pas à la clé publique de production. Reconstruire normalement après l’essai.
 
-```powershell
-.venv\Scripts\python.exe tools\make_appcast.py --installer .\dist\installer\BLIXWOU-Setup-0.1.0-x64.exe --version 0.1.0 --url $urlReelleInstallateur --signature $signatureEd25519 --output .\output\appcast.xml
-```
+WinSparkle vérifie sans fenêtre de progression à chaque démarrage. Les callbacks empêchent l’arrêt pendant une synchronisation ou une partie. En installation interactive, la case Ouvrir BLIXWOU reste proposée ; en installation silencieuse, une entrée distincte relance le programme. Les données dans %LOCALAPPDATA%\BLIXWOU sont conservées.
 
-6. Publier l’installateur dans une Release, puis le flux stable. Ne jamais modifier le fichier après signature. WinSparkle vérifie Ed25519 avant d’exécuter l’installateur ; le flux comporte la taille réelle, l’architecture x64 et les arguments Inno Setup avec progression visible.
+Les joueurs en 0.1.0 doivent installer manuellement la première version configurée, une seule fois. L’installateur n’est pas signé Authenticode : SmartScreen peut afficher un avertissement. Ed25519 est une vérification distincte, utilisée par WinSparkle.
 
-Les [instructions officielles WinSparkle](https://winsparkle.org/guides/getting-started/) décrivent les clés ; le [guide d’appcast](https://winsparkle.org/guides/publishing-updates/) décrit le flux et les arguments de l’installateur. WinSparkle gère ses propres demandes de vérification de mises à jour et n’encombre pas l’écran principal avec une nouvelle carte.
-
-Un téléchargement de pack et une session Minecraft bloquent l’arrêt demandé par WinSparkle. L’installateur refuse aussi de remplacer le launcher pendant son exécution via un mutex Windows. La désinstallation laisse les données du joueur dans `%LOCALAPPDATA%\BLIXWOU`.
-
-**À valider avant publication publique** : effectuer une mise à jour entre deux builds avec votre clé, puis vérifier qu’un installateur altéré est rejeté. Sans clé du propriétaire, URL de flux et deux versions publiées, aucun essai de mise à jour distante de production n’a été réalisé.
+À tester avant d’affirmer que le parcours fonctionne : installation silencieuse réelle et vraie mise à jour 0.1.1 → 0.1.2, avec conservation des données et relance unique.

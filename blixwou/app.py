@@ -1,4 +1,5 @@
 import argparse
+import ctypes
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -11,7 +12,7 @@ from PySide6.QtCore import Qt, QLockFile, QThread, Signal, QTimer, QUrl, QRectF
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
-    QPushButton, QSpinBox, QVBoxLayout, QWidget)
+    QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget)
 
 from .auth import Accounts
 from .config import LauncherError, atomic_json, data_root, load_config, load_settings, resource
@@ -46,6 +47,20 @@ QToolTip { background: #21162e; color: #ffffff; border: 1px solid #79539c; paddi
 def open_folder(path):
     path.mkdir(parents=True, exist_ok=True)
     QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+
+def physical_ram_mb():
+    if os.name != "nt":
+        return None
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong)] + [
+            (name, ctypes.c_ulonglong) for name in
+            ("total", "available", "page_total", "page_available", "virtual_total", "virtual_available", "extended")]
+    status = MemoryStatus()
+    status.length = ctypes.sizeof(status)
+    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        return status.total // (1024 ** 2)
+    return None
 
 
 class Worker(QThread):
@@ -139,6 +154,20 @@ class SettingsDialog(QDialog):
         self.ram.setSuffix(" Mo")
         self.ram.setValue(settings["ramMb"])
         form.addRow("Mémoire RAM", self.ram)
+        self.ram_warning = QLabel()
+        self.ram_warning.setObjectName("muted")
+        self.ram_warning.setWordWrap(True)
+        form.addRow("", self.ram_warning)
+        total_ram = physical_ram_mb()
+        def update_ram_warning(value):
+            excessive = total_ram is not None and value > total_ram / 2
+            recommended = min(6144, int(total_ram // 2048) * 1024) if total_ram else 4096
+            self.ram_warning.setText(
+                f"Trop de RAM allouée : Windows risque de ralentir. {recommended} Mo recommandés sur {total_ram / 1024:.0f} Go."
+                if excessive else "")
+            self.ram_warning.setVisible(excessive)
+        self.ram.valueChanged.connect(update_ram_warning)
+        update_ram_warning(self.ram.value())
         resolution = QHBoxLayout()
         self.width_box, self.height_box = QSpinBox(), QSpinBox()
         self.width_box.setRange(854, 7680)
@@ -288,7 +317,27 @@ class MainWindow(QMainWindow):
         self.resize(1120, 700)
         self.setMinimumSize(960, 620)
         scene = Landscape()
-        self.setCentralWidget(scene)
+        shell = QWidget()
+        shell.setObjectName('navigationShell')
+        shell.setStyleSheet('QWidget#navigationShell { background-color: #14111e; }')
+        shell_layout = QVBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        nav = QHBoxLayout()
+        self.home_button = QPushButton('Accueil')
+        self.wardrobe_button = QPushButton('Garde-robe')
+        self.nav_settings = QPushButton('Paramètres')
+        for button in (self.home_button, self.wardrobe_button, self.nav_settings):
+            nav.addWidget(button)
+        nav.addStretch()
+        shell_layout.addLayout(nav)
+        self.pages = QStackedWidget()
+        self.pages.addWidget(scene)
+        shell_layout.addWidget(self.pages)
+        self.wardrobe_page = None
+        self.home_button.clicked.connect(lambda: self.pages.setCurrentIndex(0))
+        self.wardrobe_button.clicked.connect(self.open_wardrobe)
+        self.nav_settings.clicked.connect(lambda: SettingsDialog(root, self).exec())
+        self.setCentralWidget(shell)
         layout = QVBoxLayout(scene)
         layout.setContentsMargins(44, 32, 44, 28)
         top = QHBoxLayout()
@@ -326,6 +375,11 @@ class MainWindow(QMainWindow):
         progress_layout.addWidget(self.bar)
         self.progress_panel.hide()
         layout.addWidget(self.progress_panel)
+        self.orphan_warning = QLabel()
+        self.orphan_warning.setObjectName("muted")
+        self.orphan_warning.setWordWrap(True)
+        self.orphan_warning.hide()
+        layout.addWidget(self.orphan_warning)
 
         dock = QFrame()
         dock.setObjectName("dock")
@@ -440,10 +494,12 @@ class MainWindow(QMainWindow):
         self.status_label.setToolTip("Dernière vérification : " + time.strftime("%H:%M:%S") + "\nUn délai réseau ne permet pas de conclure que le serveur est hors ligne.")
 
     def start_job(self, task, success):
+        if self.wardrobe_page is not None:
+            self.wardrobe_page.setEnabled(False)
         if self.busy:
             return
         self.busy = True
-        for widget in (self.play, self.profile, self.settings_button):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
             widget.setEnabled(False)
         self.bar.show()
         self.progress_panel.show()
@@ -457,6 +513,10 @@ class MainWindow(QMainWindow):
         job.start()
 
     def report(self, step, current, total):
+        if step.startswith("Mods hors pack :"):
+            self.orphan_warning.setText(step + " · Vérifiez le dossier des mods dans les paramètres.")
+            self.orphan_warning.setVisible(step != "Mods hors pack : aucun")
+            return
         if step == "Minecraft est lancé":
             self.play.setText("Arrêter  ■")
             self.play.setEnabled(True)
@@ -480,9 +540,11 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "BLIXWOU", message)
 
     def job_finished(self):
+        if self.wardrobe_page is not None:
+            self.wardrobe_page.setEnabled(True)
         self.busy = False
         self.play.setText("Jouer  ›")
-        for widget in (self.play, self.profile, self.settings_button):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
             widget.setEnabled(True)
         self.bar.hide()
         self.job.deleteLater()
@@ -507,6 +569,8 @@ class MainWindow(QMainWindow):
             progress("Vérification du profil", 0, 0)
             profile = self.accounts.for_launch()
             args = build_command(self.root, version, java, load_settings(self.root), profile, manifest["server"])
+            from .skins import Wardrobe
+            Wardrobe(self.root).export_active(self.root / 'game')
             launch_game(self.root, args, profile, progress, self.game_session)
             return manifest
         def done(manifest):
@@ -514,6 +578,13 @@ class MainWindow(QMainWindow):
             self.step.setText("Session terminée · prêt à jouer")
             self.refresh_profile()
         self.start_job(play, done)
+
+    def open_wardrobe(self):
+        if self.wardrobe_page is None:
+            from .wardrobe_ui import WardrobePage
+            self.wardrobe_page = WardrobePage(self.root, self)
+            self.pages.addWidget(self.wardrobe_page)
+        self.pages.setCurrentWidget(self.wardrobe_page)
 
     def closeEvent(self, event):
         if self.busy:

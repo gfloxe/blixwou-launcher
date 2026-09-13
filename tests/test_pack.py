@@ -82,6 +82,28 @@ def test_unmanaged_conflict_is_not_overwritten(tmp_path, downloads):
     assert not downloads
 
 
+def test_identical_unmanaged_mod_is_adopted(tmp_path, downloads):
+    path = tmp_path / "game/mods/a.jar"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"data")
+    manager = PackManager(tmp_path)
+    manager.sync(manifest([item("mods/a.jar")]))
+    assert read_json(manager.state)["files"] == [item("mods/a.jar")]
+    assert not downloads
+    assert path.read_bytes() == b"data"
+
+
+def test_orphan_mod_reported_without_changes(tmp_path, downloads, caplog):
+    path = tmp_path / "game/mods/old.jar"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"personal")
+    reports = []
+    PackManager(tmp_path, lambda text, *args: reports.append(text)).sync(manifest([item("mods/a.jar")]))
+    assert path.read_bytes() == b"personal"
+    assert "Mod hors pack conservé : mods/old.jar" in caplog.text
+    assert "Mods hors pack : mods/old.jar" in reports
+
+
 def test_download_failure_changes_no_active_files(tmp_path, downloads, monkeypatch):
     manager = PackManager(tmp_path)
     manager.sync(manifest([item("mods/a.jar")]))
