@@ -8,11 +8,11 @@ import struct
 import sys
 import time
 
-from PySide6.QtCore import Qt, QLockFile, QThread, Signal, QTimer, QUrl, QRectF
+from PySide6.QtCore import Qt, QLockFile, QThread, Signal, QTimer, QUrl, QRectF, QSize
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
-    QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget)
+    QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget, QSizePolicy)
 
 from .auth import Accounts
 from .config import LauncherError, atomic_json, data_root, load_config, load_settings, resource
@@ -20,6 +20,7 @@ from .minecraft import prepare_minecraft, build_command, launch_game, GameSessio
 from .network import https_url
 from .pack import PackManager
 from .status import server_status
+from .home_ui import GlowButton, dark_titlebar, skin_head, cached_news, fetch_news
 from .updater import LauncherUpdater, available_update
 from .process_guard import require_game_stopped, InstallerMutex
 
@@ -129,7 +130,7 @@ class Wordmark(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        font = QFont("Bahnschrift", 58, QFont.Black)
+        font = QFont("Bahnschrift", max(42, min(78, self.width() // 9)), QFont.Black)
         font.setLetterSpacing(QFont.AbsoluteSpacing, 4)
         painter.setFont(font)
         painter.setPen(QColor(8, 4, 18, 100))
@@ -319,7 +320,7 @@ class MainWindow(QMainWindow):
         self.closing = False
         self.setWindowTitle("BLIXWOU")
         self.setWindowIcon(QIcon(str(resource("assets/blixwou.ico"))))
-        self.resize(1120, 700)
+        self.resize(1280, 720)
         self.setMinimumSize(960, 620)
         scene = Landscape()
         shell = QWidget()
@@ -328,10 +329,16 @@ class MainWindow(QMainWindow):
         shell_layout = QVBoxLayout(shell)
         shell_layout.setContentsMargins(0, 0, 0, 0)
         nav = QHBoxLayout()
-        self.home_button = QPushButton('Accueil')
-        self.wardrobe_button = QPushButton('Garde-robe')
-        self.nav_settings = QPushButton('Paramètres')
-        for button in (self.home_button, self.wardrobe_button, self.nav_settings):
+        nav.setContentsMargins(36, 12, 36, 12)
+        brand = QLabel("B  /  BLIXWOU")
+        brand.setStyleSheet("font-weight: 700; letter-spacing: 3px; color: #d7b7ff; margin-right: 32px;")
+        nav.addWidget(brand)
+        self.home_button = GlowButton('Accueil')
+        self.wardrobe_button = GlowButton('Garde-robe')
+        for button in (self.home_button, self.wardrobe_button):
+            button.setCheckable(True)
+            button.setObjectName("navTab")
+            button.setStyleSheet("QPushButton { background: transparent; border: 0; padding: 10px 22px; color: #c6bad7; } QPushButton:checked { background: #372349; color: #ecdfff; border-bottom: 2px solid #b782ff; } QPushButton:hover { background: #2e203e; }")
             nav.addWidget(button)
         nav.addStretch()
         shell_layout.addLayout(nav)
@@ -341,61 +348,78 @@ class MainWindow(QMainWindow):
         self.wardrobe_page = None
         self.home_button.clicked.connect(lambda: self.pages.setCurrentIndex(0))
         self.wardrobe_button.clicked.connect(self.open_wardrobe)
-        self.nav_settings.clicked.connect(lambda: SettingsDialog(root, self).exec())
+        self.pages.currentChanged.connect(self.refresh_navigation)
+        self.home_button.setChecked(True)
         self.setCentralWidget(shell)
         layout = QVBoxLayout(scene)
-        layout.setContentsMargins(44, 32, 44, 28)
+        self.home_layout = layout
+        layout.setContentsMargins(44, 28, 44, 24)
         top = QHBoxLayout()
         self.profile = QPushButton()
         self.profile.setObjectName("profile")
         self.profile.setMinimumWidth(230)
-        self.profile.setAccessibleName("Choisir le profil du joueur")
-        self.profile.clicked.connect(self.choose_profile)
+        self.profile.setAccessibleName("Ouvrir la garde-robe du joueur")
+        self.profile.setIconSize(QSize(48, 48))
+        self.profile.clicked.connect(self.open_wardrobe)
         top.addWidget(self.profile)
         top.addStretch()
-        self.settings_button = QPushButton("⚙")
+        self.settings_button = GlowButton("⚙")
         self.settings_button.setObjectName("settings")
         self.settings_button.setFixedSize(46, 46)
         self.settings_button.setToolTip("Paramètres")
         self.settings_button.setAccessibleName("Paramètres")
         self.settings_button.clicked.connect(lambda: SettingsDialog(root, self).exec())
-        top.addWidget(self.settings_button)
+        nav.addWidget(self.settings_button)
         layout.addLayout(top)
-        layout.addStretch(2)
-        layout.addWidget(Wordmark())
+        layout.addStretch(1)
+        hero = QHBoxLayout()
+        hero.setSpacing(44)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(4)
+        title_col.addWidget(Wordmark())
         edition = QLabel("MINECRAFT JAVA  /  1.21.1")
         edition.setStyleSheet("color: #e2cfee; font-size: 12px; letter-spacing: 3px;")
-        layout.addWidget(edition)
-        layout.addStretch(3)
+        title_col.addWidget(edition)
+        title_col.addStretch()
+        hero.addLayout(title_col, 3)
+        self.news_card = QFrame()
+        self.news_card.setObjectName('dock')
+        self.news_card.setMaximumWidth(460)
+        self.news_layout = QVBoxLayout(self.news_card)
+        self.news_layout.setContentsMargins(24, 22, 24, 22)
+        self.news_layout.setSpacing(14)
+        hero.addWidget(self.news_card, 2)
+        layout.addLayout(hero)
+        layout.addStretch(1)
 
         self.progress_panel = QWidget()
         progress_layout = QVBoxLayout(self.progress_panel)
-        progress_layout.setContentsMargins(2, 0, 2, 16)
-        self.step = QLabel()
+        progress_layout.setContentsMargins(0, 4, 0, 0)
+        self.step = QLabel("Prêt à jouer")
         self.step.setWordWrap(True)
         progress_layout.addWidget(self.step)
         self.bar = QProgressBar()
         self.bar.setTextVisible(False)
         self.bar.setFixedHeight(5)
         progress_layout.addWidget(self.bar)
-        self.progress_panel.hide()
-        layout.addWidget(self.progress_panel)
+        self.bar.hide()
         self.orphan_warning = QLabel()
         self.orphan_warning.setObjectName("muted")
         self.orphan_warning.setWordWrap(True)
         self.orphan_warning.hide()
-        layout.addWidget(self.orphan_warning)
         self.update_notice = QLabel()
         self.update_notice.setObjectName('muted')
         self.update_notice.setWordWrap(True)
         self.update_notice.hide()
-        layout.addWidget(self.update_notice)
 
         dock = QFrame()
         dock.setObjectName("dock")
+        dock.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         dock_layout = QHBoxLayout(dock)
         dock_layout.setContentsMargins(26, 20, 22, 20)
         server_col = QVBoxLayout()
+        server_col.setSpacing(8)
+        server_col.setAlignment(Qt.AlignVCenter)
         caption = QLabel("SERVEUR BLIXWOU")
         caption.setObjectName("muted")
         caption.setStyleSheet("letter-spacing: 2px;")
@@ -404,8 +428,11 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("font-size: 19px; color: #c3b5d7;")
         self.status_label.setToolTip("Aucune réponse de statut reçue pour le moment.")
         server_col.addWidget(self.status_label)
-        dock_layout.addLayout(server_col)
-        dock_layout.addStretch()
+        server_col.addWidget(self.progress_panel)
+        server_col.addWidget(self.orphan_warning)
+        server_col.addWidget(self.update_notice)
+        dock_layout.addLayout(server_col, 1)
+        dock_layout.setSpacing(32)
         self.play = QPushButton("Jouer  ›")
         self.play.setObjectName("play")
         self.play.clicked.connect(self.play_clicked)
@@ -427,6 +454,12 @@ class MainWindow(QMainWindow):
         layout.addLayout(socials)
         self.refresh_profile()
         self.refresh_socials()
+        self.news_job = None
+        self.show_news(cached_news(root))
+        if network:
+            self.news_job = Worker(lambda progress, cancelled: fetch_news(root), self)
+            self.news_job.success.connect(self.show_news)
+            self.news_job.start()
         self.shutdown_requested.connect(self.close)
         self.update_problem.connect(self.update_failed)
         self.timer = QTimer(self)
@@ -447,7 +480,7 @@ class MainWindow(QMainWindow):
         self.update_check.start()
 
     def update_controls(self, enabled):
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button):
             widget.setEnabled(enabled)
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(enabled)
@@ -528,9 +561,11 @@ class MainWindow(QMainWindow):
         profile = self.accounts.selected()
         if profile:
             mode = "Microsoft" if profile["mode"] == "microsoft" else "Profil hors ligne"
-            self.profile.setText(f"▣   {profile['name']}\n     {mode}")
+            self.profile.setText(f"  {profile['name']}\n  {mode}")
         else:
-            self.profile.setText("▣   Choisir un profil\n     Microsoft ou hors ligne")
+            self.profile.setText("  Choisir un profil\n  Profil hors ligne")
+
+        self.profile.setIcon(QIcon(skin_head(self.root)))
 
     def choose_profile(self):
         dialog = ProfileDialog(self.accounts, self)
@@ -555,7 +590,12 @@ class MainWindow(QMainWindow):
 
     def set_status(self, status):
         color = {"online": "#89e1b1", "offline": "#e2a4b9", "unknown": "#c3b5d7"}[status["state"]]
-        self.status_label.setText("●  " + status["text"])
+        text = status["text"]
+        if status['state'] == 'online':
+            text = 'En ligne'
+            if all(status.get(key) is not None for key in ('online', 'max', 'latency')):
+                text += f" · {status['online']}/{status['max']} joueurs · {status['latency']} ms"
+        self.status_label.setText("●  " + text)
         self.status_label.setStyleSheet(f"font-size: 19px; color: {color};")
         self.status_label.setToolTip("Dernière vérification : " + time.strftime("%H:%M:%S") + "\nUn délai réseau ne permet pas de conclure que le serveur est hors ligne.")
 
@@ -565,7 +605,7 @@ class MainWindow(QMainWindow):
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(False)
         self.busy = True
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button):
             widget.setEnabled(False)
         self.bar.show()
         self.progress_panel.show()
@@ -610,7 +650,7 @@ class MainWindow(QMainWindow):
             self.wardrobe_page.setEnabled(True)
         self.busy = False
         self.play.setText("Jouer  ›")
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button):
             widget.setEnabled(True)
         self.bar.hide()
         self.job.deleteLater()
@@ -654,6 +694,45 @@ class MainWindow(QMainWindow):
             self.pages.addWidget(self.wardrobe_page)
         self.pages.setCurrentWidget(self.wardrobe_page)
 
+    def refresh_navigation(self, index):
+        self.home_button.setChecked(index == 0)
+        self.wardrobe_button.setChecked(index != 0)
+        self.refresh_profile()
+
+    def show_news(self, items):
+        while self.news_layout.count():
+            widget = self.news_layout.takeAt(0).widget()
+            if widget:
+                widget.deleteLater()
+        self.news_card.setVisible(bool(items))
+        if not items:
+            return
+        heading = QLabel('NOUVEAUTÉS')
+        heading.setStyleSheet('color: #caa0ff; font-size: 12px; font-weight: 700; letter-spacing: 2px;')
+        self.news_layout.addWidget(heading)
+        for item in items:
+            date = item['published_at'][:10].split('-')
+            label = QLabel(item['name'] + '  ·  ' + '/'.join(reversed(date)))
+            label.setTextFormat(Qt.PlainText)
+            label.setWordWrap(True)
+            label.setStyleSheet('font-weight: 600; font-size: 15px;')
+            self.news_layout.addWidget(label)
+            notes = QLabel(item['body'] or 'Une nouvelle version de BLIXWOU est disponible.')
+            notes.setTextFormat(Qt.PlainText)
+            notes.setWordWrap(True)
+            notes.setStyleSheet('color: #c1b3d0; font-size: 13px;')
+            self.news_layout.addWidget(notes)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        dark_titlebar(self)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'home_layout'):
+            margin = max(36, min(96, int(self.width() * .04)))
+            self.home_layout.setContentsMargins(margin, 28, margin, 24)
+
     def closeEvent(self, event):
         if self.busy:
             if self.job:
@@ -667,6 +746,10 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(250, self.close)
             return
         self.timer.stop()
+        if self.news_job and self.news_job.isRunning():
+            event.ignore()
+            QTimer.singleShot(250, self.close)
+            return
         if self.status_job:
             if not self.status_job.wait(10000):
                 event.ignore()
@@ -682,6 +765,7 @@ def main():
     parser.add_argument("--screenshot", type=Path, help="Rendu de l’interface pour contrôle visuel")
     parser.add_argument("--data-dir", type=Path, help="Dossier isolé pour tests locaux")
     parser.add_argument("--no-network", action="store_true")
+    parser.add_argument("--size", default="1280x720", help="Taille de fenêtre, par exemple 1920x1080")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
     # Use the installed Windows fonts for the headless visual check as well.
@@ -717,6 +801,8 @@ def main():
         else:
             PackManager(root).recover()
         window = MainWindow(root, config, network=not args.no_network and not args.screenshot)
+        width, height = map(int, args.size.lower().split("x"))
+        window.resize(width, height)
         window.show()
         if args.screenshot:
             def capture():

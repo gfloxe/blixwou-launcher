@@ -2,6 +2,7 @@
 import json
 import socket
 import struct
+import time
 
 
 def varint(value):
@@ -44,6 +45,7 @@ def server_status(host, port):
             address = host.encode("utf-8")
             # Protocol -1 requests status without asserting a game version.
             handshake = b"\x00" + varint(-1) + varint(len(address)) + address + struct.pack(">H", port) + b"\x01"
+            started = time.monotonic()
             sock.sendall(varint(len(handshake)) + handshake + b"\x01\x00")
             length = read_varint(sock)
             import io
@@ -55,7 +57,11 @@ def server_status(host, port):
             response = json.loads(exact(packet, read_varint(packet)))
             if not isinstance(response.get("version"), dict):
                 raise ValueError("Invalid status")
-            return {"state": "online", "text": "En ligne"}
+            result = {"state": "online", "text": "En ligne"}
+            players = response.get('players', {})
+            if isinstance(players, dict) and all(type(players.get(k)) is int and players[k] >= 0 for k in ('online', 'max')):
+                result.update(online=players['online'], max=players['max'], latency=round((time.monotonic() - started) * 1000))
+            return result
     except ConnectionRefusedError:
         return {"state": "offline", "text": "Hors ligne"}
     except (OSError, ValueError, ConnectionError, UnicodeError, KeyError):
