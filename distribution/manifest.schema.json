@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BLIXWOU pack manifest v1",
+  "type": "object",
+  "required": ["schemaVersion", "packVersion", "versions", "server", "socials", "files"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "packVersion": {"type": "string", "minLength": 1},
+    "versions": {
+      "type": "object",
+      "required": ["minecraft", "neoforge", "java"],
+      "properties": {
+        "minecraft": {"const": "1.21.1"},
+        "neoforge": {"type": "string", "pattern": "^21\\.1\\.[0-9]+(-beta)?$"},
+        "java": {"const": 21}
+      }
+    },
+    "server": {
+      "type": "object",
+      "required": ["host", "port"],
+      "properties": {"host": {"type": "string", "pattern": "^[A-Za-z0-9.-]+$"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}
+    },
+    "socials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "discord": {"type": ["string", "null"], "pattern": "^https://"},
+        "website": {"type": ["string", "null"], "pattern": "^https://"},
+        "tiktok": {"type": ["string", "null"], "pattern": "^https://"},
+        "youtube": {"type": ["string", "null"], "pattern": "^https://"}
+      }
+    },
+    "files": {
+      "type": "array", "maxItems": 20000,
+      "items": {
+        "type": "object",
+        "required": ["path", "url", "size", "sha256", "side", "policy"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^(mods|config|defaultconfigs|resourcepacks|shaderpacks)/.+$"},
+          "url": {"type": "string", "pattern": "^https://", "format": "uri"},
+          "size": {"type": "integer", "minimum": 0, "maximum": 8589934592},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "side": {"enum": ["client", "both", "server"]},
+          "policy": {"enum": ["enforced", "seed"]}
+        }
+      }
+    }
+  },
+  "$comment": "La validation runtime ajoute la protection des chemins Windows, des jonctions, des collisions, des URL et des règles seed. L’exemple avec neoforge:null est intentionnellement incomplet et ne peut pas être publié tel quel."
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packVersion": "0.1.0",
+  "versions": {"minecraft": "1.21.1", "neoforge": "21.1.250", "java": 21},
+  "server": {"host": "BLIXWOU.exaroton.me", "port": 48255},
+  "socials": {"discord": null, "website": null, "tiktok": null, "youtube": null},
+  "fileRules": {}
+}

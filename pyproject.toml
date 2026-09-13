@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blixwou-launcher"
+version = "0.1.0"
+description = "Launcher Windows dédié au serveur BLIXWOU"
+requires-python = ">=3.12,<3.15"
+dependencies = ["PySide6==6.11.2", "minecraft-launcher-lib==8.0", "requests==2.34.2"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "pyinstaller==6.22.2", "pillow==12.3.0"]
+
+[project.gui-scripts]
+blixwou = "blixwou.app:main"
+
+[tool.setuptools.packages.find]
+include = ["blixwou*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

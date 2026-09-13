@@ -1,0 +1,32 @@
+name: Windows build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+      - name: Build and test
+        shell: pwsh
+        run: ./tools/build_windows.ps1 -Installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BLIXWOU-Windows-x64-development
+          path: |
+            dist/BLIXWOU/
+            dist/installer/*.exe
+          retention-days: 14
