@@ -20,7 +20,7 @@ from .minecraft import prepare_minecraft, build_command, launch_game, GameSessio
 from .network import https_url
 from .pack import PackManager
 from .status import server_status
-from .updater import LauncherUpdater
+from .updater import LauncherUpdater, available_update
 from .process_guard import require_game_stopped, InstallerMutex
 
 STYLE = """
@@ -301,6 +301,7 @@ class ProfileDialog(QDialog):
 
 class MainWindow(QMainWindow):
     shutdown_requested = Signal()
+    update_problem = Signal(str)
 
     def __init__(self, root, config, network=True):
         super().__init__()
@@ -312,6 +313,10 @@ class MainWindow(QMainWindow):
         self.job = None
         self.status_job = None
         self.updater = None
+        self.updating = False
+        self.update_check = None
+        self.update_version = None
+        self.closing = False
         self.setWindowTitle("BLIXWOU")
         self.setWindowIcon(QIcon(str(resource("assets/blixwou.ico"))))
         self.resize(1120, 700)
@@ -380,6 +385,11 @@ class MainWindow(QMainWindow):
         self.orphan_warning.setWordWrap(True)
         self.orphan_warning.hide()
         layout.addWidget(self.orphan_warning)
+        self.update_notice = QLabel()
+        self.update_notice.setObjectName('muted')
+        self.update_notice.setWordWrap(True)
+        self.update_notice.hide()
+        layout.addWidget(self.update_notice)
 
         dock = QFrame()
         dock.setObjectName("dock")
@@ -418,6 +428,7 @@ class MainWindow(QMainWindow):
         self.refresh_profile()
         self.refresh_socials()
         self.shutdown_requested.connect(self.close)
+        self.update_problem.connect(self.update_failed)
         self.timer = QTimer(self)
         self.timer.setInterval(5000)
         self.timer.timeout.connect(self.check_status)
@@ -427,10 +438,65 @@ class MainWindow(QMainWindow):
 
     def startup(self):
         self.check_status()
+        self.updating = True
+        self.update_controls(False)
+        self.update_check = Worker(lambda progress, cancelled: available_update(
+            self.config['launcherUpdate'].get('appcastUrl'), self.config['appVersion']), self)
+        self.update_check.success.connect(lambda value: setattr(self, 'update_version', value))
+        self.update_check.finished.connect(self.update_checked)
+        self.update_check.start()
+
+    def update_controls(self, enabled):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
+            widget.setEnabled(enabled)
+        if self.wardrobe_page is not None:
+            self.wardrobe_page.setEnabled(enabled)
+
+    def can_update_shutdown(self):
+        if self.busy or self.game_session.process is not None:
+            return False
         try:
-            self.updater = LauncherUpdater(self.config["launcherUpdate"], self.config["appVersion"], lambda: not self.busy, self.shutdown_requested.emit)
-        except LauncherError as error:
-            self.show_error(str(error))
+            require_game_stopped(self.root)
+        except LauncherError:
+            return False
+        return True
+
+    def update_checked(self):
+        self.update_check.deleteLater()
+        self.update_check = None
+        if self.closing:
+            return
+        if not self.update_version or not self.can_update_shutdown():
+            self.updating = False
+            self.update_controls(True)
+            self.startup_pack()
+            return
+        self.report('Mise à jour vers ' + self.update_version + '…', 0, 0)
+        self.progress_panel.show()
+        self.bar.show()
+        try:
+            self.updater = LauncherUpdater(self.config['launcherUpdate'], self.config['appVersion'],
+                self.can_update_shutdown, self.shutdown_requested.emit,
+                lambda: self.update_problem.emit('Mise à jour indisponible. Vous pouvez continuer à jouer.'),
+                lambda: self.update_problem.emit('Mise à jour interrompue. Vous pouvez continuer à jouer.'))
+            self.updater.install()
+        except Exception:
+            self.update_failed('Mise à jour indisponible. Vous pouvez continuer à jouer.')
+
+    def update_failed(self, message):
+        if not self.updating or self.closing:
+            return
+        self.updating = False
+        if self.updater:
+            self.updater.close()
+            self.updater = None
+        self.update_notice.setText(message)
+        self.update_notice.show()
+        self.bar.hide()
+        self.update_controls(True)
+        self.startup_pack()
+
+    def startup_pack(self):
         if self.config.get("manifestUrl"):
             self.start_job(lambda progress, cancelled: self.sync_pack(progress), self.pack_ready)
         else:
@@ -494,10 +560,10 @@ class MainWindow(QMainWindow):
         self.status_label.setToolTip("Dernière vérification : " + time.strftime("%H:%M:%S") + "\nUn délai réseau ne permet pas de conclure que le serveur est hors ligne.")
 
     def start_job(self, task, success):
+        if self.updating or self.busy:
+            return
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(False)
-        if self.busy:
-            return
         self.busy = True
         for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.nav_settings):
             widget.setEnabled(False)
@@ -551,6 +617,8 @@ class MainWindow(QMainWindow):
         self.job = None
 
     def play_clicked(self):
+        if self.updating:
+            return
         if self.game_session.process is not None:
             self.game_session.stop()
             self.play.setText("Arrêt en cours…")
@@ -592,6 +660,11 @@ class MainWindow(QMainWindow):
                 self.job.requestInterruption()  # Cancels pending OAuth only.
             QMessageBox.information(self, "BLIXWOU est actif", "Fermez Minecraft ou attendez la fin de l’installation avant de quitter le launcher. Une connexion Microsoft en attente vient d’être annulée.")
             event.ignore()
+            return
+        self.closing = True
+        if self.update_check and not self.update_check.wait(6000):
+            event.ignore()
+            QTimer.singleShot(250, self.close)
             return
         self.timer.stop()
         if self.status_job:

@@ -34,12 +34,12 @@ def https_url(url: str) -> str:
     return url
 
 
-def request(method, url, *, session=None, **kwargs):
+def request(method, url, *, session=None, timeout=(10, 45), **kwargs):
     """Validate every redirect before connecting; never downgrade TLS."""
     for _ in range(6):
         https_url(url)
         send = session.request if session is not None else requests.request
-        response = send(method, url, timeout=(10, 45), allow_redirects=False, **kwargs)
+        response = send(method, url, timeout=timeout, allow_redirects=False, **kwargs)
         if response.status_code in (301, 302, 303, 307, 308):
             target = urljoin(url, response.headers.get("Location", ""))
             response.close()

@@ -30,7 +30,7 @@ def test_winsparkle_signature_rejects_modified_installer(tmp_path):
     dll.win_sparkle_set_eddsa_public_key.restype = ctypes.c_int
     assert dll.win_sparkle_set_eddsa_public_key(public.encode("ascii")) == 1
 
-def test_updater_checks_silently_after_init(monkeypatch):
+def test_updater_installs_only_after_explicit_preflight(monkeypatch):
     from blixwou.updater import LauncherUpdater
     import json
     calls = []
@@ -48,14 +48,71 @@ def test_updater_checks_silently_after_init(monkeypatch):
     monkeypatch.setattr(ctypes, 'CDLL', lambda path: dll)
     config = json.loads((ROOT / 'launcher-config.json').read_text())
     updater = LauncherUpdater(config['launcherUpdate'], config['appVersion'], lambda: False, lambda: None)
+    assert not any('check_update' in name for name, args in calls)
+    updater.install()
     names = [name for name, args in calls]
-    assert names.index('win_sparkle_set_automatic_check_for_updates') < names.index('win_sparkle_init') < names.index('win_sparkle_check_update_without_ui')
-    assert dict(calls)['win_sparkle_set_automatic_check_for_updates'] == (1,)
+    assert names.index('win_sparkle_set_automatic_check_for_updates') < names.index('win_sparkle_init') < names.index('win_sparkle_check_update_with_ui_and_install')
+    assert dict(calls)['win_sparkle_set_automatic_check_for_updates'] == (0,)
     assert updater.can_cb() == 0
-    assert dll.win_sparkle_check_update_without_ui.argtypes == []
+    assert dll.win_sparkle_check_update_with_ui_and_install.argtypes == []
     assert dll.win_sparkle_set_automatic_check_for_updates.argtypes == [ctypes.c_int]
     updater.close()
     assert calls[-1][0] == 'win_sparkle_cleanup'
+
+
+@pytest.mark.parametrize('new,old,expected', [('0.1.10','0.1.9',True),('1.0.0','0.99.99',True),('0.1.1','0.1.1',False),('0.1.0','0.1.1',False)])
+def test_numeric_versions(new, old, expected):
+    from blixwou.updater import version_tuple
+    assert (version_tuple(new)>version_tuple(old)) is expected
+
+
+@pytest.mark.parametrize('value',['1.2','1.2.3-beta','bad','-1.2.3',None])
+def test_invalid_versions(value):
+    from blixwou.updater import version_tuple
+    with pytest.raises(ValueError):version_tuple(value)
+
+
+@pytest.mark.parametrize('body',[b'',b'not xml',b'<rss/>',b'<rss><channel><item><version>1.2.3</version></item></channel></rss>'])
+def test_bad_appcast_is_silent(monkeypatch,body):
+    from blixwou.updater import available_update
+    class Response:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def iter_content(self,size):yield body
+    def get(*args,**kwargs):
+        assert kwargs['timeout']==5
+        return Response()
+    monkeypatch.setattr('blixwou.updater.request',get)
+    assert available_update('https://example.org/appcast.xml','0.1.1') is None
+
+
+def test_absent_appcast_is_silent(monkeypatch):
+    from blixwou.updater import available_update
+    import requests
+    def missing(*args,**kwargs):raise requests.HTTPError('404')
+    monkeypatch.setattr('blixwou.updater.request',missing)
+    assert available_update('https://example.org/appcast.xml','0.1.1') is None
+
+
+def test_update_failure_reactivates_launcher(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from blixwou.app import MainWindow
+    from blixwou.config import load_config
+    app=QApplication.instance() or QApplication([])
+    window=MainWindow(tmp_path,load_config(),network=False)
+    resumed=[]
+    monkeypatch.setattr(window,'startup_pack',lambda:resumed.append(True))
+    window.updating=True
+    window.update_controls(False)
+    window.start_job(lambda *args:None,lambda *args:None)
+    assert window.job is None
+    window.update_failed('Échec de mise à jour')
+    assert window.play.isEnabled() and not window.updating
+    assert resumed==[True]
+    assert window.update_notice.text()=='Échec de mise à jour'
+    window.update_failed('Duplicate callback')
+    assert resumed==[True]
+    window.close()
 
 
 def test_versions_share_config_source(monkeypatch, tmp_path):
