@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>BLIXWOU</title>
+    <language>fr</language>
+    <item>
+      <title>BLIXWOU 0.1.1</title>
+      <pubDate>Sun, 13 Sep 2026 13:34:39 +0000</pubDate>
+      <sparkle:version>0.1.1</sparkle:version>
+      <sparkle:minimumSystemVersion>10.0.17763</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/gfloxe/blixwou-launcher/releases/download/v0.1.1/BLIXWOU-Setup-0.1.1-x64.exe" length="43241759" type="application/octet-stream" sparkle:edSignature="xdOowPdnSn5QItNq0twCj0/JIi9t09wqfdW6C7BbburyN2xba+JXRtIX7rJc0YAOI+HIXitTrRP3LHT+ajAXAQ==" sparkle:os="windows-x64" sparkle:installerArguments="/SILENT /SP- /NOICONS" />
+    </item>
+  </channel>
+</rss>

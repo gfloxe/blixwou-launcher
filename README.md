@@ -90,3 +90,9 @@ Dans `%LOCALAPPDATA%\BLIXWOU` : `game/` contient le pack, les réglages du jeu, 
 - [Sources et licences](docs/THIRD-PARTY.md)
 
 Ce projet ne redistribue aucun JAR Minecraft, Java ni mod propriétaire. Les téléchargements du jeu sont effectués sur le poste du joueur depuis les sources officielles. Distribuer uniquement les mods et resource packs pour lesquels vous possédez les autorisations nécessaires.
+
+## Télécharger
+
+[Installer la dernière version publiée de BLIXWOU](https://github.com/gfloxe/blixwou-launcher/releases/latest).
+
+Le code de main peut contenir des fonctionnalités en préparation. Seule une publication explicite met à jour les joueurs.
