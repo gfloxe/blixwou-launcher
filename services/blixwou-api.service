@@ -1,0 +1,15 @@
+[Unit]
+Description=BLIXWOU private accounts and server status
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/BLIXWOU-Services
+ExecStart=%h/BLIXWOU-Services/.venv/bin/python -m services.api
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

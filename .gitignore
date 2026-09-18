@@ -16,6 +16,10 @@ token.json
 skins/
 game/
 *.part
+services/private/
+*.sqlite3
+*.sqlite3-*
+exaroton.token
 vendor/*.dll
 vendor/*.zip
 vendor/*/ 
