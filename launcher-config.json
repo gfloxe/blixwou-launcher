@@ -27,5 +27,11 @@
     "owner": "gfloxe",
     "repository": "BLIXWOU",
     "created": true
+  },
+  "firebase": {
+    "apiKey": "AIzaSyDziPW8CMgjNUifi1ryQ3aJl9A1bkulFaE",
+    "projectId": "blixwou",
+    "authDomain": "blixwou.firebaseapp.com",
+    "appId": "1:312170726851:web:2cd49ce8e40dc18e01e976"
   }
 }

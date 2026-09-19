@@ -341,6 +341,12 @@ class MainWindow(QMainWindow):
             button.setStyleSheet("QPushButton { background: transparent; border: 0; padding: 10px 22px; color: #c6bad7; } QPushButton:checked { background: #372349; color: #ecdfff; border-bottom: 2px solid #b782ff; } QPushButton:hover { background: #2e203e; }")
             nav.addWidget(button)
         nav.addStretch()
+        self.community_accounts = None
+        self.community_button = QPushButton('Compte BLIXWOU')
+        self.community_button.setToolTip('Connexion au compte communautaire BLIXWOU')
+        self.community_button.clicked.connect(self.open_community_account)
+        self.community_button.setVisible(bool(config.get('firebase')))
+        nav.addWidget(self.community_button)
         shell_layout.addLayout(nav)
         self.pages = QStackedWidget()
         self.pages.addWidget(scene)
@@ -480,7 +486,7 @@ class MainWindow(QMainWindow):
         self.update_check.start()
 
     def update_controls(self, enabled):
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(enabled)
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(enabled)
@@ -605,7 +611,7 @@ class MainWindow(QMainWindow):
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(False)
         self.busy = True
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(False)
         self.bar.show()
         self.progress_panel.show()
@@ -650,7 +656,7 @@ class MainWindow(QMainWindow):
             self.wardrobe_page.setEnabled(True)
         self.busy = False
         self.play.setText("Jouer  ›")
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button):
+        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(True)
         self.bar.hide()
         self.job.deleteLater()
@@ -686,6 +692,13 @@ class MainWindow(QMainWindow):
             self.step.setText("Session terminée · prêt à jouer")
             self.refresh_profile()
         self.start_job(play, done)
+
+    def open_community_account(self):
+        from .firebase_accounts import FirebaseAccounts
+        from .firebase_ui import FirebaseDialog
+        if self.community_accounts is None:
+            self.community_accounts = FirebaseAccounts(self.root, self.config['firebase'])
+        FirebaseDialog(self.community_accounts, self).exec()
 
     def open_wardrobe(self):
         if self.wardrobe_page is None:

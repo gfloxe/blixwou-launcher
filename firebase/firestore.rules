@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function allowed() {
+      return signedIn() && !exists(/databases/$(database)/documents/bans/$(request.auth.uid));
+    }
+    match /users/{uid} {
+      allow get: if allowed() && request.auth.uid == uid;
+      allow create: if allowed() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['username', 'createdAt'])
+        && request.resource.data.username is string
+        && request.resource.data.username.matches('^[a-z0-9_]{3,16}$')
+        && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
+      allow list, update, delete: if false;
+    }
+    match /usernames/{name} {
+      allow create: if allowed() && name.matches('^[a-z0-9_]{3,16}$')
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == name;
+      allow read, update, delete: if false;
+    }
+    match /bans/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
