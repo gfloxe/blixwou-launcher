@@ -10,6 +10,10 @@ clé exaroton ne doit être ajouté au launcher. Analytics n'est pas intégré.
 
 ## Configuration administrateur
 
+État au 19 septembre 2026 : le fournisseur Firebase Authentication
+E-mail/Mot de passe est actif et les règles de `firebase/firestore.rules` sont
+publiées sur la base `(default)` du projet `blixwou`.
+
 1. Firebase Authentication → Mode de connexion : activer E-mail/Mot de passe.
 2. Firestore : vérifier que la base `(default)` existe en mode natif.
 3. Lire les règles existantes avant tout remplacement : si d'autres applications
@@ -45,8 +49,9 @@ automatiquement déployées par un push GitHub ni par une Release du launcher.
 
 `python -m pytest` couvre les erreurs réseau, la réservation atomique côté client,
 le renouvellement des jetons, l'isolation des sessions Minecraft, les bans et le dialogue.
-Les tests simulent Firebase : ils ne remplacent pas un test des règles dans l'émulateur
-ou le projet de test. Aucun e-mail de test n'est envoyé par cette suite.
+Les tests simulent Firebase : ils ne remplacent pas un test complet avec deux comptes
+réels. La console Firebase a accepté et publié les règles le 19 septembre 2026.
+Aucun e-mail de test n'est envoyé par cette suite.
 
 Références :
 - https://firebase.google.com/docs/reference/rest/auth
