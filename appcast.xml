@@ -4,11 +4,11 @@
     <title>BLIXWOU</title>
     <language>fr</language>
     <item>
-      <title>BLIXWOU 0.1.4</title>
-      <pubDate>Sat, 19 Sep 2026 15:25:37 +0000</pubDate>
-      <sparkle:version>0.1.4</sparkle:version>
+      <title>BLIXWOU 0.1.5</title>
+      <pubDate>Sat, 19 Sep 2026 16:24:46 +0000</pubDate>
+      <sparkle:version>0.1.5</sparkle:version>
       <sparkle:minimumSystemVersion>10.0.17763</sparkle:minimumSystemVersion>
-      <enclosure url="https://github.com/gfloxe/blixwou-launcher/releases/download/v0.1.4/BLIXWOU-Setup-0.1.4-x64.exe" length="44663713" type="application/octet-stream" sparkle:edSignature="Z4xrGG6f/Cx/dQXv19DWNduxhixrT95JImBoUoWZEHUYVLblclD4sfkDkwC0FwTOPUK4bX3ykJQSsuNfs8GqCQ==" sparkle:os="windows-x64" sparkle:installerArguments="/SILENT /SP- /NOICONS" />
+      <enclosure url="https://github.com/gfloxe/blixwou-launcher/releases/download/v0.1.5/BLIXWOU-Setup-0.1.5-x64.exe" length="44681298" type="application/octet-stream" sparkle:edSignature="7SjiODR/B+2ZTDH8IJOp6nwPXi0FOSEfkqGlscDL8/FiRRsWcusHRnMmRUjWOOjPCOzzGFVKVX8Cum6tgziKAA==" sparkle:os="windows-x64" sparkle:installerArguments="/SILENT /SP- /NOICONS" />
     </item>
   </channel>
 </rss>
