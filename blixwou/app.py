@@ -10,7 +10,7 @@ import time
 
 from PySide6.QtCore import Qt, QLockFile, QThread, Signal, QTimer, QUrl, QRectF, QSize
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDialog, QGridLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
     QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget, QSizePolicy)
 
@@ -143,23 +143,60 @@ class SettingsDialog(QDialog):
     def __init__(self, root, parent):
         super().__init__(parent)
         self.setWindowTitle("Paramètres · BLIXWOU")
-        self.setMinimumWidth(490)
+        self.setObjectName("settingsDialog")
+        self.setMinimumWidth(640)
+        self.setMaximumWidth(760)
+        self.setStyleSheet(self.SETTINGS_STYLE)
         self.root = root
         settings = load_settings(root)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 26, 28, 26)
-        form = QFormLayout()
+        layout.setContentsMargins(28, 18, 28, 20)
+        layout.setSpacing(10)
+
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(12)
+        badge = QLabel("⚙")
+        badge.setObjectName("settingsBadge")
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setFixedSize(38, 38)
+        brand_row.addWidget(badge)
+        brand = QLabel("BLIXWOU  /  PARAMÈTRES")
+        brand.setObjectName("settingsBrand")
+        brand_row.addWidget(brand)
+        brand_row.addStretch()
+        runtime = QLabel("JAVA 21  •  64 BITS")
+        runtime.setObjectName("runtimePill")
+        brand_row.addWidget(runtime)
+        layout.addLayout(brand_row)
+
+        heading = QLabel("Personnalisez votre expérience")
+        heading.setObjectName("settingsHeading")
+        layout.addWidget(heading)
+        subtitle = QLabel("Ajustez les performances, la fenêtre du jeu et les fichiers de BLIXWOU.")
+        subtitle.setObjectName("settingsSubtitle")
+        layout.addWidget(subtitle)
+
+        performance = QFrame()
+        performance.setObjectName("settingsCard")
+        performance_layout = QVBoxLayout(performance)
+        performance_layout.setContentsMargins(16, 11, 16, 11)
+        performance_layout.setSpacing(5)
+        performance_header = QHBoxLayout()
+        performance_header.addWidget(self.section_title("PERFORMANCES", "Mémoire allouée à Minecraft"))
         self.ram = QSpinBox()
         self.ram.setRange(2048, 32768)
         self.ram.setSingleStep(512)
         self.ram.setSuffix(" Mo")
         self.ram.setValue(settings["ramMb"])
-        form.addRow("Mémoire RAM", self.ram)
+        self.ram.setFixedWidth(142)
+        performance_header.addWidget(self.ram, alignment=Qt.AlignVCenter)
+        performance_layout.addLayout(performance_header)
         self.ram_warning = QLabel()
-        self.ram_warning.setObjectName("muted")
+        self.ram_warning.setObjectName("settingsWarning")
         self.ram_warning.setWordWrap(True)
-        form.addRow("", self.ram_warning)
+        performance_layout.addWidget(self.ram_warning)
         total_ram = physical_ram_mb()
+
         def update_ram_warning(value):
             excessive = total_ram is not None and value > total_ram / 2
             recommended = min(6144, int(total_ram // 2048) * 1024) if total_ram else 4096
@@ -169,51 +206,149 @@ class SettingsDialog(QDialog):
             self.ram_warning.setVisible(excessive)
         self.ram.valueChanged.connect(update_ram_warning)
         update_ram_warning(self.ram.value())
+        layout.addWidget(performance)
+
+        display = QFrame()
+        display.setObjectName("settingsCard")
+        display_layout = QHBoxLayout(display)
+        display_layout.setContentsMargins(16, 11, 16, 11)
+        display_layout.addWidget(self.section_title("AFFICHAGE", "Résolution de la fenêtre du jeu"))
+        display_layout.addStretch()
         resolution = QHBoxLayout()
+        resolution.setSpacing(8)
         self.width_box, self.height_box = QSpinBox(), QSpinBox()
         self.width_box.setRange(854, 7680)
         self.height_box.setRange(480, 4320)
         self.width_box.setValue(settings["width"])
         self.height_box.setValue(settings["height"])
+        self.width_box.setFixedWidth(100)
+        self.height_box.setFixedWidth(100)
         resolution.addWidget(self.width_box)
-        resolution.addWidget(QLabel("×"))
+        multiply = QLabel("×")
+        multiply.setObjectName("multiply")
+        resolution.addWidget(multiply)
         resolution.addWidget(self.height_box)
-        form.addRow("Résolution", resolution)
+        display_layout.addLayout(resolution)
+        layout.addWidget(display)
+
+        java_card = QFrame()
+        java_card.setObjectName("settingsCard")
+        java_layout = QVBoxLayout(java_card)
+        java_layout.setContentsMargins(16, 11, 16, 11)
+        java_layout.setSpacing(6)
+        java_layout.addWidget(self.section_title("MOTEUR JAVA", "Laissez vide pour utiliser Java 21 automatiquement"))
         self.java = QLineEdit(settings["javaPath"])
-        self.java.setPlaceholderText("Automatique · Java 21 x64")
+        self.java.setPlaceholderText("Sélection automatique · Java 21 x64")
         java_row = QHBoxLayout()
+        java_row.setSpacing(8)
         java_row.addWidget(self.java)
-        browse = QPushButton("…")
-        browse.setFixedWidth(42)
+        browse = QPushButton("Parcourir")
+        browse.setObjectName("compactAction")
+        browse.setFixedWidth(102)
         browse.clicked.connect(self.browse_java)
         java_row.addWidget(browse)
-        form.addRow("Java", java_row)
-        layout.addLayout(form)
-        note = QLabel("Laissez le chemin vide pour installer Java automatiquement.")
-        note.setObjectName("muted")
-        layout.addWidget(note)
-        folders = QHBoxLayout()
-        for name, path in [("Dossier du jeu", root / "game"), ("Journaux", root / "logs")]:
+        java_layout.addLayout(java_row)
+        layout.addWidget(java_card)
+
+        files = QFrame()
+        files.setObjectName("settingsCard")
+        files_layout = QVBoxLayout(files)
+        files_layout.setContentsMargins(16, 11, 16, 11)
+        files_layout.setSpacing(7)
+        files_layout.addWidget(self.section_title("FICHIERS & MAINTENANCE", "Accès rapide aux dossiers locaux"))
+        folders = QGridLayout()
+        folders.setHorizontalSpacing(8)
+        folders.setVerticalSpacing(8)
+        items = [
+            ("↗  Dossier du jeu", root / "game"),
+            ("↗  Journaux", root / "logs"),
+            ("↗  Mods", root / "game" / "mods"),
+            ("↗  Shaders", root / "game" / "shaderpacks"),
+        ]
+        for index, (name, path) in enumerate(items):
             button = QPushButton(name)
+            button.setObjectName("folderAction")
             button.clicked.connect(lambda checked=False, p=path: open_folder(p))
-            folders.addWidget(button)
-        layout.addLayout(folders)
-        mods_button = QPushButton("Ouvrir le dossier des mods")
-        mods_button.clicked.connect(lambda: open_folder(root / "game" / "mods"))
-        layout.addWidget(mods_button)
-        shaders_button = QPushButton("Ouvrir le dossier des shaders")
-        shaders_button.clicked.connect(lambda: open_folder(root / "game" / "shaderpacks"))
-        layout.addWidget(shaders_button)
+            folders.addWidget(button, index // 2, index % 2)
+        files_layout.addLayout(folders)
+        maintenance = QHBoxLayout()
+        maintenance_text = QLabel("La désinstallation conserve les données du jeu.")
+        maintenance_text.setObjectName("settingsHint")
+        maintenance.addWidget(maintenance_text)
+        maintenance.addStretch()
         uninstall_button = QPushButton("Désinstaller BLIXWOU")
+        uninstall_button.setObjectName("dangerAction")
         uninstall_button.setToolTip("Ouvrir le désinstalleur Windows. Les données du jeu sont conservées.")
         uninstall_button.clicked.connect(self.uninstall)
-        layout.addWidget(uninstall_button)
+        maintenance.addWidget(uninstall_button)
+        files_layout.addLayout(maintenance)
+        layout.addWidget(files)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText("Enregistrer")
         buttons.button(QDialogButtonBox.Cancel).setText("Annuler")
+        buttons.button(QDialogButtonBox.Save).setObjectName("saveSettings")
+        buttons.button(QDialogButtonBox.Cancel).setObjectName("cancelSettings")
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    @staticmethod
+    def section_title(eyebrow, description):
+        container = QWidget()
+        box = QVBoxLayout(container)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(3)
+        title = QLabel(eyebrow)
+        title.setObjectName("settingsEyebrow")
+        box.addWidget(title)
+        detail = QLabel(description)
+        detail.setObjectName("settingsHint")
+        box.addWidget(detail)
+        return container
+
+    SETTINGS_STYLE = """
+    QDialog#settingsDialog { background: #100c18; color: #f7f2ff; }
+    QLabel#settingsBadge { background: #8f4be8; border: 1px solid #c79bff;
+        border-radius: 10px; color: white; font-size: 19px; font-weight: 800; }
+    QLabel#settingsBrand { color: #d8c4ed; font-size: 11px; font-weight: 700;
+        letter-spacing: 3px; }
+    QLabel#runtimePill { background: #1f1830; border: 1px solid #4b3862;
+        border-radius: 12px; color: #c8a5ee; font-size: 10px; font-weight: 700;
+        padding: 6px 10px; }
+    QLabel#settingsHeading { color: white; font-size: 25px; font-weight: 750;
+        margin-top: 1px; }
+    QLabel#settingsSubtitle { color: #b7a9c6; font-size: 13px; }
+    QFrame#settingsCard { background: #191322; border: 1px solid #3b2c4d;
+        border-radius: 14px; }
+    QFrame#settingsCard:hover { border-color: #59406e; }
+    QLabel#settingsEyebrow { color: #b990e7; font-size: 10px; font-weight: 750;
+        letter-spacing: 2px; }
+    QLabel#settingsHint { color: #a99db7; font-size: 12px; }
+    QLabel#multiply { color: #a98cce; font-size: 16px; font-weight: 700; }
+    QLabel#settingsWarning { background: #2c1d19; border: 1px solid #714735;
+        border-radius: 8px; color: #ffc29f; padding: 8px 10px; font-size: 12px; }
+    QLineEdit, QSpinBox { background: #100c18; border: 1px solid #453455;
+        border-radius: 9px; color: white; padding: 9px 11px; min-height: 20px;
+        selection-background-color: #8f4be8; }
+    QLineEdit:hover, QSpinBox:hover { border-color: #6c4b89; }
+    QLineEdit:focus, QSpinBox:focus { border: 1px solid #a767f5; background: #15101e; }
+    QPushButton#compactAction, QPushButton#folderAction { background: #261c31;
+        border: 1px solid #473557; border-radius: 9px; color: #d3c5df;
+        padding: 7px 12px; text-align: left; }
+    QPushButton#compactAction { text-align: center; }
+    QPushButton#compactAction:hover, QPushButton#folderAction:hover {
+        background: #332141; border-color: #8f5db8; color: white; }
+    QPushButton#dangerAction { background: transparent; border: 1px solid #633645;
+        border-radius: 9px; color: #e99bad; padding: 8px 12px; }
+    QPushButton#dangerAction:hover { background: #321a22; border-color: #a64b65; color: #ffc0cf; }
+    QPushButton#saveSettings { background: #914cf0; border: 1px solid #c28cff;
+        border-radius: 10px; color: white; padding: 11px 24px; font-weight: 700; }
+    QPushButton#saveSettings:hover { background: #a65eff; }
+    QPushButton#cancelSettings { background: transparent; border: 1px solid #493858;
+        border-radius: 10px; color: #c6b8d4; padding: 11px 20px; }
+    QPushButton#cancelSettings:hover { background: #251a31; border-color: #7c59a0; color: white; }
+    """
 
     def uninstall(self):
         parent = self.parent()
