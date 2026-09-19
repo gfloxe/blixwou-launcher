@@ -6,7 +6,8 @@ from PySide6.QtCore import Qt, QTimer, QPointF, QRectF, QSize
 from PySide6.QtGui import QImage, QPixmap, QIcon, QPainter, QPolygonF, QTransform, QColor
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QFileDialog, QInputDialog, QMessageBox, QComboBox)
+    QListWidget, QListWidgetItem, QFileDialog, QInputDialog, QMessageBox, QComboBox,
+    QFrame, QSizePolicy)
 from .config import LauncherError
 from .skins import Wardrobe, LIMIT, import_premium
 
@@ -51,7 +52,7 @@ class SkinPreview(QOpenGLWidget):
         display.end()
 
     def paint_scene(self, painter):
-        painter.fillRect(self.rect(), QColor('#171022'))
+        painter.fillRect(self.rect(), QColor('#120d1c'))
         if self.image.isNull():
             painter.setPen(QColor('#c9b4e3'))
             painter.drawText(self.rect(), Qt.AlignCenter, 'Ajoute un skin pour le découvrir ici')
@@ -97,58 +98,142 @@ class SkinPreview(QOpenGLWidget):
 class WardrobePage(QWidget):
     def __init__(self, root, owner):
         super().__init__(owner)
+        self.root = Path(root)
         self.store = Wardrobe(root)
         self.owner = owner
         self.loading = False
+        self.setObjectName('skinPage')
+        self.setStyleSheet(self.STYLE)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 18, 24, 18)
-        title = QLabel('Garde-robe')
-        title.setStyleSheet('font-size: 28px; font-weight: 700')
-        layout.addWidget(title)
-        layout.addWidget(QLabel('Ton style, partagé sur BLIXWOU au prochain lancement du jeu.'))
-        body=QHBoxLayout()
+        layout.setContentsMargins(34, 24, 34, 28)
+        layout.setSpacing(18)
+
+        header = QHBoxLayout()
+        header_text = QVBoxLayout()
+        eyebrow = QLabel('PERSONNALISATION  /  BLIXWOU')
+        eyebrow.setObjectName('eyebrow')
+        header_text.addWidget(eyebrow)
+        title = QLabel('Vos skins')
+        title.setObjectName('skinTitle')
+        header_text.addWidget(title)
+        subtitle = QLabel('Choisissez l’apparence envoyée au serveur au prochain lancement du jeu.')
+        subtitle.setObjectName('skinSubtitle')
+        header_text.addWidget(subtitle)
+        header.addLayout(header_text)
+        header.addStretch()
+        self.count = QLabel()
+        self.count.setObjectName('countPill')
+        header.addWidget(self.count, 0, Qt.AlignTop)
+        layout.addLayout(header)
+
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        library = QFrame()
+        library.setObjectName('skinCard')
+        library.setMinimumWidth(310)
+        library.setMaximumWidth(390)
+        library_layout = QVBoxLayout(library)
+        library_layout.setContentsMargins(18, 18, 18, 18)
+        library_layout.setSpacing(12)
+        library_title = QLabel('MA COLLECTION')
+        library_title.setObjectName('cardCaption')
+        library_layout.addWidget(library_title)
         self.list=QListWidget()
         self.list.setIconSize(QSize(48,48))
-        self.list.setStyleSheet('QListWidget {background:#21172e; border:0; border-radius:10px} QListWidget::item {padding:10px} QListWidget::item:selected {background:#633a91}')
         self.list.currentRowChanged.connect(self.select)
-        body.addWidget(self.list,1)
+        library_layout.addWidget(self.list, 1)
+        import_row = QHBoxLayout()
+        import_file = QPushButton('＋  Importer un PNG')
+        import_file.setObjectName('secondaryAction')
+        import_file.clicked.connect(self.import_file)
+        import_row.addWidget(import_file)
+        import_name = QPushButton('Depuis un pseudo')
+        import_name.setObjectName('secondaryAction')
+        import_name.clicked.connect(self.import_name)
+        import_row.addWidget(import_name)
+        library_layout.addLayout(import_row)
+        body.addWidget(library)
+
+        preview_card = QFrame()
+        preview_card.setObjectName('skinCard')
+        preview_layout = QVBoxLayout(preview_card)
+        preview_layout.setContentsMargins(18, 16, 18, 18)
+        preview_layout.setSpacing(10)
+        preview_header = QHBoxLayout()
+        preview_header.addWidget(QLabel('APERÇU 3D'))
+        preview_header.addStretch()
+        self.active_badge = QLabel('AUCUN SKIN ACTIF')
+        self.active_badge.setObjectName('activePill')
+        preview_header.addWidget(self.active_badge)
+        preview_layout.addLayout(preview_header)
         self.preview=SkinPreview(self)
-        body.addWidget(self.preview,2)
+        self.preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        preview_layout.addWidget(self.preview, 1)
+        body.addWidget(preview_card, 2)
         layout.addLayout(body,1)
-        row=QHBoxLayout()
-        for label,callback in [('Importer PNG',self.import_file),('Depuis un pseudo',self.import_name),('Renommer',self.rename),('Supprimer',self.delete),('Utiliser',self.use)]:
-            button=QPushButton(label)
-            if label == 'Utiliser':
-                button.setStyleSheet('background:#9454ef; font-weight:700')
-            button.clicked.connect(callback)
-            row.addWidget(button)
-        layout.addLayout(row)
+
+        controls = QFrame()
+        controls.setObjectName('skinCard')
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(18, 14, 18, 14)
+        controls_layout.setSpacing(10)
         self.model=QComboBox()
         self.model.addItem('Classic · bras larges','classic')
         self.model.addItem('Slim · bras fins','slim')
         self.model.currentIndexChanged.connect(self.change_model)
-        footer=QHBoxLayout()
-        footer.addWidget(self.model)
+        controls_layout.addWidget(self.model)
+        for label, callback in [('Renommer', self.rename), ('Supprimer', self.delete)]:
+            button = QPushButton(label)
+            button.setObjectName('secondaryAction')
+            button.clicked.connect(callback)
+            controls_layout.addWidget(button)
         reset=QPushButton('Sans skin personnalisé')
+        reset.setObjectName('secondaryAction')
         reset.clicked.connect(self.clear_active)
-        footer.addWidget(reset)
-        layout.addLayout(footer)
+        controls_layout.addWidget(reset)
+        controls_layout.addStretch()
+        use = QPushButton('Utiliser ce skin  ›')
+        use.setObjectName('primaryAction')
+        use.clicked.connect(self.use)
+        controls_layout.addWidget(use)
+        layout.addWidget(controls)
         self.notice=QLabel('')
+        self.notice.setObjectName('skinNotice')
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
         self.reload()
+
+    STYLE = """
+    QWidget#skinPage { background: #100c18; }
+    QLabel#eyebrow, QLabel#cardCaption { color: #bf8cff; font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+    QLabel#skinTitle { font-size: 32px; font-weight: 750; color: #ffffff; }
+    QLabel#skinSubtitle, QLabel#skinNotice { color: #b9acc8; font-size: 13px; }
+    QLabel#countPill, QLabel#activePill { background: #2a1b3a; border: 1px solid #5d3a7e; border-radius: 12px; color: #d9b9ff; font-size: 11px; font-weight: 700; padding: 6px 12px; }
+    QFrame#skinCard { background: #181120; border: 1px solid #342541; border-radius: 16px; }
+    QFrame#skinCard:hover { border-color: #51396a; }
+    QListWidget { background: #110c18; border: 1px solid #2e213a; border-radius: 12px; padding: 5px; outline: 0; }
+    QListWidget::item { border-radius: 9px; color: #d9cfdf; margin: 3px; padding: 9px; }
+    QListWidget::item:hover { background: #24172f; }
+    QListWidget::item:selected { background: #60358a; color: white; }
+    QComboBox { background: #21172b; border: 1px solid #49355c; border-radius: 9px; padding: 10px 14px; min-width: 175px; }
+    QPushButton#secondaryAction { background: #21172b; border: 1px solid #49355c; padding: 10px 14px; }
+    QPushButton#secondaryAction:hover { background: #322040; border-color: #9d67da; }
+    QPushButton#primaryAction { background: #9454ef; border: 1px solid #c69cff; font-size: 15px; font-weight: 700; padding: 12px 24px; }
+    QPushButton#primaryAction:hover { background: #ab6bff; }
+    """
 
     def attempt(self, action):
         try:
             action()
             self.reload()
         except (LauncherError,OSError,ValueError) as error:
-            QMessageBox.warning(self,'Garde-robe',str(error))
+            QMessageBox.warning(self,'Skin',str(error))
 
     def reload(self):
         self.loading=True
         previous=self.selected()
         self.entries=self.store.entries()
+        self.count.setText(f"{len(self.entries)} SKIN" + ('S' if len(self.entries) != 1 else ''))
         self.list.clear()
         for entry in self.entries:
             image=QImage(str(self.store.path(entry)))
@@ -177,6 +262,7 @@ class WardrobePage(QWidget):
         if entry:self.model.setCurrentIndex(1 if entry['model']=='slim' else 0)
         self.model.blockSignals(False)
         self.preview.set_skin(self.store.path(entry) if entry else None,entry['model'] if entry else 'classic')
+        self.active_badge.setText('ACTIF' if entry and entry.get('active') else 'APERÇU')
 
     def import_file(self):
         path,_=QFileDialog.getOpenFileName(self,'Importer un skin','','Skin PNG (*.png)')
@@ -204,20 +290,39 @@ class WardrobePage(QWidget):
     def delete(self):
         entry=self.selected()
         if entry and QMessageBox.question(self,'Supprimer ce skin ?',entry['name'],QMessageBox.Yes|QMessageBox.No,QMessageBox.No)==QMessageBox.Yes:
-            self.attempt(lambda:self.store.delete(entry['id']))
+            was_active = entry.get('active')
+            def remove():
+                self.store.delete(entry['id'])
+                if was_active:
+                    self.store.export_active(self.root / 'game')
+            self.attempt(remove)
+            if was_active:
+                self.owner.refresh_profile()
 
     def use(self):
         entry=self.selected()
         if entry:
-            self.attempt(lambda:self.store.edit(entry['id'],active=True))
-            self.notice.setText('Skin sélectionné pour le prochain lancement de Minecraft.')
+            def activate():
+                self.store.edit(entry['id'], active=True)
+                self.store.export_active(self.root / 'game')
+            self.attempt(activate)
+            self.owner.refresh_profile()
+            self.notice.setText('Skin actif : il sera appliqué dans Minecraft au prochain lancement.')
 
     def change_model(self,index):
         entry=self.selected()
-        if entry:self.attempt(lambda:self.store.edit(entry['id'],model=self.model.currentData()))
+        if entry:
+            def change():
+                self.store.edit(entry['id'], model=self.model.currentData())
+                if entry.get('active'):
+                    self.store.export_active(self.root / 'game')
+            self.attempt(change)
 
     def clear_active(self):
         def clear():
             for entry in self.store.entries():
                 if entry['active']:self.store.edit(entry['id'],active=False)
+            self.store.export_active(self.root / 'game')
         self.attempt(clear)
+        self.owner.refresh_profile()
+        self.notice.setText('Le skin personnalisé a été retiré.')

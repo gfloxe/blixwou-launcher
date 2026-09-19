@@ -96,7 +96,7 @@ def normalize_news(items):
         body = item.get('body') or ''
         note = ' '.join(str(body).split())
         result.append(dict(name=title[:60], published_at=date, body=note[:137] + '…' if len(note) > 140 else note))
-    return sorted(result, key=lambda item: item['published_at'], reverse=True)[:3]
+    return sorted(result, key=lambda item: item['published_at'], reverse=True)[:1]
 
 
 def cached_news(root):
@@ -112,7 +112,7 @@ def cached_news(root):
 def fetch_news(root):
     try:
         started = time.monotonic()
-        with request('GET', 'https://api.github.com/repos/gfloxe/blixwou-launcher/releases?per_page=3',
+        with request('GET', 'https://api.github.com/repos/gfloxe/blixwou-launcher/releases?per_page=1',
                      timeout=5, stream=True, headers={'Accept': 'application/vnd.github+json'}) as response:
             body = bytearray()
             for chunk in response.iter_content(16384):

@@ -39,6 +39,15 @@ QPushButton#play:disabled { background: #432d5e; color: #b5a3cb; border-color: #
 QLineEdit, QSpinBox { background: #211a2d; border: 1px solid #483755; border-radius: 7px; padding: 9px; selection-background-color: #8244cc; }
 QLabel#muted { color: #bdb2ce; font-size: 12px; }
 QFrame#dock { background: rgba(13, 10, 23, 222); border: 1px solid rgba(194, 159, 236, 60); border-radius: 16px; }
+QFrame#operationCard { background: rgba(18, 12, 30, 238); border: 1px solid #744da0; border-radius: 16px; }
+QFrame#operationCard[mode="update"] { background: rgba(10, 24, 35, 242); border-color: #3fa5c9; }
+QFrame#operationCard[mode="error"] { background: rgba(43, 17, 31, 242); border-color: #c65e86; }
+QLabel#operationBadge { background: #7040a5; border-radius: 10px; color: white; font-size: 11px; font-weight: 700; padding: 5px 10px; }
+QLabel#operationBadge[mode="update"] { background: #237b9a; }
+QLabel#operationBadge[mode="error"] { background: #9d3d62; }
+QLabel#operationTitle { font-size: 17px; font-weight: 700; }
+QLabel#operationDetail { color: #c9bbd8; font-size: 12px; }
+QLabel#operationPercent { color: #d9c1ff; font-size: 13px; font-weight: 700; }
 QProgressBar { background: #2d223c; border: none; border-radius: 3px; height: 5px; }
 QProgressBar::chunk { background: #b782ff; border-radius: 3px; }
 QToolTip { background: #21162e; color: #ffffff; border: 1px solid #79539c; padding: 5px; }
@@ -469,7 +478,7 @@ class MainWindow(QMainWindow):
         brand.setStyleSheet("font-weight: 700; letter-spacing: 3px; color: #d7b7ff; margin-right: 32px;")
         nav.addWidget(brand)
         self.home_button = GlowButton('Accueil')
-        self.wardrobe_button = GlowButton('Garde-robe')
+        self.wardrobe_button = GlowButton('Skin')
         for button in (self.home_button, self.wardrobe_button):
             button.setCheckable(True)
             button.setObjectName("navTab")
@@ -499,7 +508,7 @@ class MainWindow(QMainWindow):
         self.profile = QPushButton()
         self.profile.setObjectName("profile")
         self.profile.setMinimumWidth(230)
-        self.profile.setAccessibleName("Ouvrir la garde-robe du joueur")
+        self.profile.setAccessibleName("Ouvrir les skins du joueur")
         self.profile.setIconSize(QSize(48, 48))
         self.profile.clicked.connect(self.open_wardrobe)
         top.addWidget(self.profile)
@@ -539,11 +548,6 @@ class MainWindow(QMainWindow):
         self.step = QLabel("Prêt à jouer")
         self.step.setWordWrap(True)
         progress_layout.addWidget(self.step)
-        self.bar = QProgressBar()
-        self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(5)
-        progress_layout.addWidget(self.bar)
-        self.bar.hide()
         self.orphan_warning = QLabel()
         self.orphan_warning.setObjectName("muted")
         self.orphan_warning.setWordWrap(True)
@@ -552,6 +556,38 @@ class MainWindow(QMainWindow):
         self.update_notice.setObjectName('muted')
         self.update_notice.setWordWrap(True)
         self.update_notice.hide()
+
+        self.operation_card = QFrame()
+        self.operation_card.setObjectName("operationCard")
+        self.operation_card.setProperty("mode", "install")
+        operation_layout = QHBoxLayout(self.operation_card)
+        operation_layout.setContentsMargins(22, 16, 22, 16)
+        operation_layout.setSpacing(16)
+        self.operation_badge = QLabel("PACK")
+        self.operation_badge.setObjectName("operationBadge")
+        self.operation_badge.setProperty("mode", "install")
+        self.operation_badge.setAlignment(Qt.AlignCenter)
+        self.operation_badge.setFixedWidth(74)
+        operation_layout.addWidget(self.operation_badge)
+        operation_text = QVBoxLayout()
+        operation_text.setSpacing(4)
+        self.operation_title = QLabel("Préparation de BLIXWOU")
+        self.operation_title.setObjectName("operationTitle")
+        operation_text.addWidget(self.operation_title)
+        self.operation_detail = QLabel("Analyse des fichiers locaux")
+        self.operation_detail.setObjectName("operationDetail")
+        self.operation_detail.setWordWrap(True)
+        operation_text.addWidget(self.operation_detail)
+        self.bar = QProgressBar()
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(7)
+        operation_text.addWidget(self.bar)
+        operation_layout.addLayout(operation_text, 1)
+        self.operation_percent = QLabel("EN COURS")
+        self.operation_percent.setObjectName("operationPercent")
+        operation_layout.addWidget(self.operation_percent, 0, Qt.AlignRight | Qt.AlignVCenter)
+        self.operation_card.hide()
+        layout.addWidget(self.operation_card)
 
         dock = QFrame()
         dock.setObjectName("dock")
@@ -645,9 +681,8 @@ class MainWindow(QMainWindow):
             self.update_controls(True)
             self.startup_pack()
             return
-        self.report('Mise à jour vers ' + self.update_version + '…', 0, 0)
-        self.progress_panel.show()
-        self.bar.show()
+        self.show_operation('update', 'Mise à jour du launcher',
+                            'Installation sécurisée de BLIXWOU ' + self.update_version, 0, 0)
         try:
             self.updater = LauncherUpdater(self.config['launcherUpdate'], self.config['appVersion'],
                 self.can_update_shutdown, self.shutdown_requested.emit,
@@ -666,7 +701,7 @@ class MainWindow(QMainWindow):
             self.updater = None
         self.update_notice.setText(message)
         self.update_notice.show()
-        self.bar.hide()
+        self.hide_operation()
         self.update_controls(True)
         self.startup_pack()
 
@@ -675,7 +710,7 @@ class MainWindow(QMainWindow):
             self.start_job(lambda progress, cancelled: self.sync_pack(progress), self.pack_ready)
         else:
             self.step.setText("Le pack BLIXWOU n’est pas encore disponible. La connexion Microsoft reste accessible depuis le profil.")
-            self.bar.hide()
+            self.hide_operation()
             self.progress_panel.show()
 
     def sync_pack(self, progress):
@@ -701,10 +736,9 @@ class MainWindow(QMainWindow):
     def refresh_profile(self):
         profile = self.accounts.selected()
         if profile:
-            mode = "Microsoft" if profile["mode"] == "microsoft" else "Profil hors ligne"
-            self.profile.setText(f"  {profile['name']}\n  {mode}")
+            self.profile.setText(f"  {profile['name']}")
         else:
-            self.profile.setText("  Choisir un profil\n  Profil hors ligne")
+            self.profile.setText("  Choisir un profil")
 
         self.profile.setIcon(QIcon(skin_head(self.root)))
 
@@ -748,9 +782,8 @@ class MainWindow(QMainWindow):
         self.busy = True
         for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(False)
-        self.bar.show()
         self.progress_panel.show()
-        self.report("Préparation", 0, 0)
+        self.show_operation('install', 'Installation du pack', 'Analyse des fichiers locaux', 0, 0)
         job = Worker(task, self)
         self.job = job
         job.progress.connect(self.report)
@@ -767,7 +800,7 @@ class MainWindow(QMainWindow):
         if step == "Minecraft est lancé":
             self.play.setText("Arrêter  ■")
             self.play.setEnabled(True)
-            self.bar.hide()
+            self.hide_operation()
         text = step
         if total:
             if total > 100000:
@@ -776,13 +809,44 @@ class MainWindow(QMainWindow):
                 text += f" · {current} / {total}"
             self.bar.setRange(0, 1000)
             self.bar.setValue(min(1000, int(current * 1000 / total)))
+            self.operation_percent.setText(f"{min(100, int(current * 100 / total))} %")
         else:
             self.bar.setRange(0, 0)  # Indeterminate, never a fabricated percentage.
+            self.operation_percent.setText("EN COURS")
         self.step.setText(text)
+        if step != "Minecraft est lancé":
+            self.operation_title.setText(step)
+            self.operation_detail.setText(text if text != step else "Préparation et vérification des fichiers")
+            self.operation_card.show()
+
+    def show_operation(self, mode, title, detail, current=0, total=0):
+        self.operation_card.setProperty('mode', mode)
+        self.operation_badge.setProperty('mode', mode)
+        self.operation_badge.setText({'install': 'PACK', 'update': 'UPDATE', 'error': 'ATTENTION'}.get(mode, 'PACK'))
+        for widget in (self.operation_card, self.operation_badge):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self.operation_title.setText(title)
+        self.operation_detail.setText(detail)
+        if total:
+            self.bar.setRange(0, 1000)
+            self.bar.setValue(min(1000, int(current * 1000 / total)))
+            self.operation_percent.setText(f"{min(100, int(current * 100 / total))} %")
+        else:
+            self.bar.setRange(0, 0)
+            self.operation_percent.setText("EN COURS")
+        self.bar.show()
+        self.operation_card.show()
+
+    def hide_operation(self):
+        self.bar.hide()
+        self.operation_card.hide()
 
     def show_error(self, message):
         self.step.setText(message)
+        self.show_operation('error', 'Une action est requise', message)
         self.bar.hide()
+        self.operation_percent.setText("ERREUR")
         self.progress_panel.show()
         QMessageBox.warning(self, "BLIXWOU", message)
 
@@ -793,7 +857,7 @@ class MainWindow(QMainWindow):
         self.play.setText("Jouer  ›")
         for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(True)
-        self.bar.hide()
+        self.hide_operation()
         self.job.deleteLater()
         self.job = None
 
@@ -855,7 +919,7 @@ class MainWindow(QMainWindow):
         self.news_card.setVisible(bool(items))
         if not items:
             return
-        heading = QLabel('NOUVEAUTÉS')
+        heading = QLabel('DERNIÈRE MISE À JOUR')
         heading.setStyleSheet('color: #caa0ff; font-size: 12px; font-weight: 700; letter-spacing: 2px;')
         self.news_layout.addWidget(heading)
         for item in items:

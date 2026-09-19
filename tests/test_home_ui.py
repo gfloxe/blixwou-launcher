@@ -26,7 +26,7 @@ def test_news_fetch_limits_and_caches(tmp_path, monkeypatch):
         return Response()
     monkeypatch.setattr(home_ui, 'request', request)
     news = home_ui.fetch_news(tmp_path)
-    assert [item['name'] for item in news] == ['Version 5', 'Version 4', 'Version 3']
+    assert [item['name'] for item in news] == ['Version 5']
     assert all(len(item['body']) <= 140 for item in news)
     assert home_ui.cached_news(tmp_path) == news
 
@@ -45,4 +45,12 @@ def test_home_status_and_navigation(tmp_path):
     window.set_status(dict(state='online', text='En ligne', online=3))
     assert window.status_label.text() == '●  En ligne'
     assert window.progress_panel.parentWidget().objectName() == 'dock'
+    assert window.news_layout.count() == 0
+    window.show_operation('install', 'Installation du pack', 'Analyse', 1, 4)
+    assert not window.operation_card.isHidden()
+    assert window.operation_badge.text() == 'PACK'
+    assert window.operation_percent.text() == '25 %'
+    window.show_operation('update', 'Mise à jour du launcher', 'Téléchargement')
+    assert window.operation_badge.text() == 'UPDATE'
+    assert window.operation_card.property('mode') == 'update'
     window.close()

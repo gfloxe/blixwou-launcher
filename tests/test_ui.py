@@ -58,8 +58,8 @@ def test_profile_settings_and_empty_socials(tmp_path):
     dialog.name.setText("BlixPlayer")
     dialog.offline()
     window.refresh_profile()
-    assert "BlixPlayer" in window.profile.text()
-    assert "hors ligne" in window.profile.text()
+    assert window.profile.text().strip() == "BlixPlayer"
+    assert "hors ligne" not in window.profile.text().lower()
     settings = SettingsDialog(tmp_path, window)
     settings.ram.setValue(6144)
     settings.save()
