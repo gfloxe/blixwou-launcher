@@ -2,7 +2,6 @@
 import os
 import base64
 import json
-import logging
 import re
 import shutil
 from pathlib import Path, PurePosixPath
@@ -13,6 +12,7 @@ from .network import digest, download, get_json, https_url
 
 ROOTS = {"mods", "config", "defaultconfigs", "resourcepacks", "shaderpacks"}
 RESERVED = re.compile(r"^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)", re.I)
+STRICT_FILES = {"mods": {".jar"}, "shaderpacks": {".zip"}, "resourcepacks": {".zip"}}
 
 
 def safe_path(root: Path, relative: str) -> Path:
@@ -102,6 +102,45 @@ class PackManager:
         atomic_json(self.state, journal["oldState"])
         (self.tx / "journal.json").unlink()
 
+    def strict_orphans(self, manifest):
+        """Return client archives absent from the published inventory."""
+        selected = {f["path"].casefold() for f in manifest["files"] if f["side"] != "server"}
+        found = []
+        for folder, suffixes in STRICT_FILES.items():
+            root = self.game / folder
+            if not root.is_dir() or root.is_symlink() or root.is_junction():
+                continue
+            for path in root.iterdir():
+                relative = folder + "/" + path.name
+                if path.is_file() and path.suffix.lower() in suffixes and relative.casefold() not in selected:
+                    found.append(relative)
+        return sorted(found, key=str.casefold)
+
+    def audit(self, manifest, cache=None):
+        """Read-only integrity audit; unchanged files reuse their last verified digest."""
+        validate(manifest, self.game)
+        cache, verified, issues = cache or {}, {}, []
+        selected = [f for f in manifest["files"] if f["side"] != "server"]
+        state = read_json(self.state, {"packVersion": None, "files": []})
+        if state.get("packVersion") != manifest["packVersion"]:
+            issues.append("version du pack")
+        for item in selected:
+            target = safe_path(self.game, item["path"])
+            if item["policy"] == "seed" and target.exists():
+                continue
+            if not target.is_file():
+                issues.append(item["path"])
+                continue
+            stat = target.stat()
+            signature = (stat.st_size, stat.st_mtime_ns)
+            old = cache.get(item["path"].casefold())
+            checksum = old[2] if old and old[:2] == signature else digest(target)
+            verified[item["path"].casefold()] = (*signature, checksum)
+            if stat.st_size != item["size"] or checksum != item["sha256"]:
+                issues.append(item["path"])
+        issues.extend(self.strict_orphans(manifest))
+        return issues, verified
+
     def sync(self, manifest):
         validate(manifest, self.game)
         self.recover()
@@ -147,6 +186,20 @@ class PackManager:
             # Preserve modified obsolete configurations and resource packs.
             if target.is_file() and (item["path"].startswith(("mods/", "shaderpacks/")) or digest(target) == item["sha256"]):
                 operations.append({"path": item["path"], "stage": None, "existed": True})
+        # Extra client archives can change gameplay. Preserve a recoverable copy,
+        # then remove them so the active folders exactly match the published pack.
+        scheduled = {op["path"].casefold() for op in operations}
+        for relative in self.strict_orphans(manifest):
+            if relative.casefold() in scheduled:
+                continue
+            target = safe_path(self.game, relative)
+            checksum = digest(target)
+            preserved = safe_path(self.root / "personal-backups", relative + "." + checksum)
+            preserved.parent.mkdir(parents=True, exist_ok=True)
+            if not preserved.exists():
+                shutil.copy2(target, preserved)
+            operations.append({"path": relative, "stage": None, "existed": True})
+            scheduled.add(relative.casefold())
         self.tx.mkdir(parents=True, exist_ok=True)
         backup_dir = self.tx / "backup"
         backup_dir.mkdir(exist_ok=True)
@@ -176,32 +229,32 @@ class PackManager:
             if p.is_file():
                 p.unlink()
         self.progress("Pack à jour", 1, 1)
-        orphans = []
-        mods = self.game / "mods"
-        if mods.is_dir() and not mods.is_symlink() and not mods.is_junction():
-            for path in sorted(mods.iterdir()):
-                relative = "mods/" + path.name
-                if path.suffix.lower() == ".jar" and relative.casefold() not in current and relative.casefold() not in previous:
-                    orphans.append(relative)
-                    logging.warning("Mod hors pack conservé : %s", relative)
-        self.progress("Mods hors pack : " + ", ".join(orphans) if orphans else "Mods hors pack : aucun", 0, 0)
+        self.progress("Fichiers hors pack : aucun", 0, 0)
         return manifest
 
-    def fetch_and_sync(self, url):
+    def fetch_manifest(self, url, *, fresh=False):
         if not url:
             raise LauncherError("Distribution à configurer : publiez le manifeste puis renseignez manifestUrl dans launcher-config.json.")
-        self.progress("Lecture du manifeste", 0, 0)
         https_url(url)
         parsed = urlsplit(url)
         parts = parsed.path.strip('/').split('/')
-        if parsed.hostname == 'raw.githubusercontent.com' and len(parts) >= 4:
+        if parsed.hostname == 'raw.githubusercontent.com' and len(parts) >= 4 and not fresh:
             owner, repository, ref = parts[:3]
             path = '/'.join(parts[3:])
             api = f'https://api.github.com/repos/{owner}/{repository}/contents/{path}?ref={quote(ref, safe="")}'
             document = get_json(api)
             if document.get('encoding') != 'base64' or not document.get('content'):
                 raise LauncherError("Le manifeste GitHub est indisponible. Réessayez dans quelques instants.")
-            manifest = json.loads(base64.b64decode(document['content']))
-        else:
-            manifest = get_json(url)
-        return self.sync(manifest)
+            return json.loads(base64.b64decode(document['content']))
+        # A changing query prevents a stale CDN response without consuming the
+        # very small unauthenticated GitHub API quota every five seconds.
+        if fresh and parsed.hostname == 'raw.githubusercontent.com':
+            import time
+            url += ('&' if parsed.query else '?') + 'blixwou_check=' + str(int(time.time()) // 5)
+        return get_json(url)
+
+    def fetch_and_sync(self, url):
+        if not url:
+            raise LauncherError("Distribution à configurer : publiez le manifeste puis renseignez manifestUrl dans launcher-config.json.")
+        self.progress("Lecture du manifeste", 0, 0)
+        return self.sync(self.fetch_manifest(url))

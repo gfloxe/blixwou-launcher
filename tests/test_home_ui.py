@@ -54,3 +54,19 @@ def test_home_status_and_navigation(tmp_path):
     assert window.operation_badge.text() == 'UPDATE'
     assert window.operation_card.property('mode') == 'update'
     window.close()
+
+
+def test_periodic_maintenance_result_repairs_only_when_needed(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from blixwou.app import MainWindow
+    from blixwou.config import load_config
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path, load_config(), network=False)
+    started = []
+    monkeypatch.setattr(window, 'start_job', lambda task, done: started.append((task, done)))
+    window.maintenance_ready({'manifest': {}, 'issues': [], 'cache': {'x': (1, 2, 'a')}, 'update': None})
+    assert window.step.text() == 'Pack vérifié · à jour'
+    assert not started
+    window.maintenance_ready({'manifest': {}, 'issues': ['mods/a.jar'], 'cache': {}, 'update': None})
+    assert window.repair_pending and len(started) == 1
+    window.close()

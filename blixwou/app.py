@@ -457,6 +457,9 @@ class MainWindow(QMainWindow):
         self.game_session = GameSession()
         self.job = None
         self.status_job = None
+        self.maintenance_job = None
+        self.integrity_cache = {}
+        self.repair_pending = False
         self.updater = None
         self.updating = False
         self.update_check = None
@@ -642,8 +645,12 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.setInterval(5000)
         self.timer.timeout.connect(self.check_status)
+        self.maintenance_timer = QTimer(self)
+        self.maintenance_timer.setInterval(5000)
+        self.maintenance_timer.timeout.connect(self.check_maintenance)
         if network:
             self.timer.start()
+            self.maintenance_timer.start()
             QTimer.singleShot(0, self.startup)
 
     def startup(self):
@@ -719,6 +726,8 @@ class MainWindow(QMainWindow):
 
     def pack_ready(self, manifest):
         self.manifest = manifest
+        self.integrity_cache = {}
+        self.repair_pending = False
         self.refresh_socials()
         self.check_status()
 
@@ -763,6 +772,44 @@ class MainWindow(QMainWindow):
         job.finished.connect(finished)
         job.start()
 
+    def check_maintenance(self):
+        """Check launcher and pack integrity every five seconds without blocking Qt."""
+        if (self.maintenance_job is not None or self.updating or self.busy
+                or self.game_session.process is not None or not self.config.get("manifestUrl")):
+            return
+        cache = dict(self.integrity_cache)
+        def inspect(progress, cancelled):
+            manager = PackManager(self.root)
+            manifest = manager.fetch_manifest(self.config["manifestUrl"], fresh=True)
+            issues, verified = manager.audit(manifest, cache)
+            version = available_update(self.config['launcherUpdate'].get('appcastUrl'), self.config['appVersion'])
+            return {"manifest": manifest, "issues": issues, "cache": verified, "update": version}
+        job = Worker(inspect, self)
+        self.maintenance_job = job
+        job.success.connect(self.maintenance_ready)
+        def finished():
+            self.maintenance_job = None
+            job.deleteLater()
+        job.finished.connect(finished)
+        job.start()
+
+    def maintenance_ready(self, result):
+        self.manifest = result["manifest"]
+        self.integrity_cache = result["cache"]
+        self.refresh_socials()
+        if result["update"]:
+            self.update_notice.setText("Mise à jour du launcher disponible : " + result["update"])
+            self.update_notice.show()
+        if not result["issues"]:
+            if not self.busy:
+                self.step.setText("Pack vérifié · à jour")
+            return
+        self.integrity_cache = {}
+        self.step.setText("Écart détecté · réparation automatique du pack")
+        if not self.repair_pending and not self.busy and self.game_session.process is None:
+            self.repair_pending = True
+            self.start_job(lambda progress, cancelled: self.sync_pack(progress), self.pack_ready)
+
     def set_status(self, status):
         color = {"online": "#89e1b1", "offline": "#e2a4b9", "unknown": "#c3b5d7"}[status["state"]]
         text = status["text"]
@@ -793,9 +840,9 @@ class MainWindow(QMainWindow):
         job.start()
 
     def report(self, step, current, total):
-        if step.startswith("Mods hors pack :"):
+        if step.startswith(("Mods hors pack :", "Fichiers hors pack :")):
             self.orphan_warning.setText(step + " · Vérifiez le dossier des mods dans les paramètres.")
-            self.orphan_warning.setVisible(step != "Mods hors pack : aucun")
+            self.orphan_warning.setVisible(not step.endswith(": aucun"))
             return
         if step == "Minecraft est lancé":
             self.play.setText("Arrêter  ■")
@@ -854,6 +901,7 @@ class MainWindow(QMainWindow):
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(True)
         self.busy = False
+        self.repair_pending = False
         self.play.setText("Jouer  ›")
         for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(True)
@@ -958,12 +1006,18 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(250, self.close)
             return
         self.timer.stop()
+        self.maintenance_timer.stop()
         if self.news_job and self.news_job.isRunning():
             event.ignore()
             QTimer.singleShot(250, self.close)
             return
         if self.status_job:
             if not self.status_job.wait(10000):
+                event.ignore()
+                QTimer.singleShot(250, self.close)
+                return
+        if self.maintenance_job:
+            if not self.maintenance_job.wait(10000):
                 event.ignore()
                 QTimer.singleShot(250, self.close)
                 return

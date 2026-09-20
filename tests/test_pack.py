@@ -68,7 +68,8 @@ def test_seed_personal_and_server_files_preserved(tmp_path, downloads):
     (game / "mods/personal.jar").write_bytes(b"mine")
     manager.sync(manifest())
     assert not (game / "mods/client.jar").exists()
-    assert (game / "mods/personal.jar").read_bytes() == b"mine"
+    assert not (game / "mods/personal.jar").exists()
+    assert any(p.is_file() and p.read_bytes() == b"mine" for p in (tmp_path / "personal-backups").rglob("*"))
     assert (game / "config/player.json").read_bytes() == b"personal"
 
 
@@ -93,15 +94,35 @@ def test_identical_unmanaged_mod_is_adopted(tmp_path, downloads):
     assert path.read_bytes() == b"data"
 
 
-def test_orphan_mod_reported_without_changes(tmp_path, downloads, caplog):
+def test_orphan_mod_is_backed_up_and_removed(tmp_path, downloads):
     path = tmp_path / "game/mods/old.jar"
     path.parent.mkdir(parents=True)
     path.write_bytes(b"personal")
     reports = []
     PackManager(tmp_path, lambda text, *args: reports.append(text)).sync(manifest([item("mods/a.jar")]))
-    assert path.read_bytes() == b"personal"
-    assert "Mod hors pack conservé : mods/old.jar" in caplog.text
-    assert "Mods hors pack : mods/old.jar" in reports
+    assert not path.exists()
+    assert any(p.is_file() and p.read_bytes() == b"personal" for p in (tmp_path / "personal-backups").rglob("*"))
+    assert "Fichiers hors pack : aucun" in reports
+
+
+def test_audit_detects_corruption_missing_and_extra_archives(tmp_path, downloads):
+    data = manifest([item("mods/a.jar"), item("config/client.json")])
+    manager = PackManager(tmp_path)
+    manager.sync(data)
+    issues, cache = manager.audit(data)
+    assert issues == [] and cache
+    (tmp_path / "game/mods/a.jar").write_bytes(b"bad!")
+    (tmp_path / "game/shaderpacks").mkdir()
+    (tmp_path / "game/shaderpacks/extra.zip").write_bytes(b"mine")
+    issues, _ = manager.audit(data, cache)
+    assert issues == ["mods/a.jar", "shaderpacks/extra.zip"]
+
+
+def test_fresh_manifest_avoids_github_api_quota(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr('blixwou.pack.get_json', lambda url: calls.append(url) or manifest())
+    PackManager(tmp_path).fetch_manifest('https://raw.githubusercontent.com/gfloxe/BLIXWOU/main/manifest.json', fresh=True)
+    assert calls[0].startswith('https://raw.githubusercontent.com/gfloxe/BLIXWOU/main/manifest.json?blixwou_check=')
 
 
 def test_download_failure_changes_no_active_files(tmp_path, downloads, monkeypatch):
