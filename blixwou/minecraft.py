@@ -1,4 +1,5 @@
 """Official Mojang metadata + NeoForge installer; launcher-lib for rules/arguments."""
+import ctypes
 import json
 import logging
 import os
@@ -212,6 +213,46 @@ class GameSession:
             except subprocess.TimeoutExpired:
                 process.terminate()
         threading.Thread(target=close, name='BLIXWOU-stop-game', daemon=True).start()
+
+
+def ready_game_title(title):
+    name = title.casefold()
+    return 'minecraft' in name and not any(word in name for word in ('loading', 'chargement'))
+
+
+def game_window_ready(process):
+    """Wait for the Minecraft window title to leave NeoForge's loading screen."""
+    if os.name != 'nt' or process is None or process.poll() is not None:
+        return False
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [callback_type, wintypes.LPARAM]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    ready = False
+
+    @callback_type
+    def visit(hwnd, param):
+        nonlocal ready
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value != process.pid or not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if not length:
+            return True
+        title = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, title, length + 1)
+        if ready_game_title(title.value):
+            ready = True
+            return False
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return ready
 
 
 def launch_game(root, args, profile, progress, session=None):

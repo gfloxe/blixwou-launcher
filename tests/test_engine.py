@@ -8,6 +8,7 @@ from blixwou.auth import offline_profile
 from blixwou.config import LauncherError, atomic_json, DEFAULT_SETTINGS
 from blixwou.java import extract_java
 from blixwou.minecraft import build_command
+from blixwou.minecraft import ready_game_title
 from blixwou.process_guard import process_birth, record_game, require_game_stopped
 
 
@@ -76,3 +77,10 @@ def test_game_exit_distinguishes_stop_from_crash(tmp_path, monkeypatch, stopped)
         with pytest.raises(LauncherError):
             launch_game(tmp_path, [], {}, progress, session)
     assert session.process is None
+
+
+def test_neoforge_loading_window_is_not_considered_ready():
+    assert not ready_game_title('Minecraft: NeoForge Loading...')
+    assert not ready_game_title('Minecraft : Chargement')
+    assert not ready_game_title('Java Platform SE binary')
+    assert ready_game_title('Minecraft NeoForge* 1.21.1')

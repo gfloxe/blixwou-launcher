@@ -31,6 +31,92 @@ def test_orphan_warning_survives_launch_progress(tmp_path):
     window.close()
 
 
+def test_launcher_waits_for_ready_window_and_restores_after_game_exit(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path, load_config(), network=False)
+    monkeypatch.setattr(QSystemTrayIcon, 'isSystemTrayAvailable', staticmethod(lambda: True))
+
+    class Process:
+        def poll(self):
+            return None
+
+    window.game_session.process = Process()
+    hidden = []
+    monkeypatch.setattr(window, 'hide_to_tray', lambda: hidden.append(True))
+    monkeypatch.setattr('blixwou.app.game_window_ready', lambda process: False)
+    window.report('Minecraft est lancé', 0, 0)
+    window.check_game_ready()
+    assert not window.game_ready
+    assert not hidden
+
+    monkeypatch.setattr('blixwou.app.game_window_ready', lambda process: True)
+    window.check_game_ready()
+    assert not window.game_ready
+    window.check_game_ready()
+    assert window.game_ready
+    assert hidden == [True]
+    assert not window.game_ready_timer.isActive()
+
+    class Tray:
+        def isVisible(self):
+            return True
+        def hide(self):
+            pass
+
+    class Job:
+        def deleteLater(self):
+            pass
+
+    restored = []
+    window.tray = Tray()
+    monkeypatch.setattr(window, 'restore_from_tray', lambda: restored.append(True))
+    window.job = Job()
+    window.game_session.process = None
+    window.job_finished()
+    assert restored == [True]
+    assert not window.game_ready
+    assert window.play.text().startswith('Jouer')
+    window.close()
+
+
+def test_tray_animation_hides_and_click_restores_window(tmp_path, monkeypatch):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path, load_config(), network=False)
+
+    class Tray:
+        visible = False
+        def show(self):
+            self.visible = True
+        def hide(self):
+            self.visible = False
+        def isVisible(self):
+            return self.visible
+
+    window.tray = Tray()
+    window.game_session.process = object()
+    window.game_ready = True
+    window.show()
+    app.processEvents()
+    window.tray_animation.setDuration(1)
+    monkeypatch.setattr(QSystemTrayIcon, 'isSystemTrayAvailable', staticmethod(lambda: True))
+
+    window.hide_to_tray()
+    QTest.qWait(50)
+    assert window.isHidden()
+    assert window.tray.isVisible()
+
+    window.tray_activated(QSystemTrayIcon.Trigger)
+    QTest.qWait(50)
+    assert window.isVisible()
+    window.game_session.process = None
+    window.close()
+
+
 def test_background_cache_survives_repaint_and_refreshes_on_resize():
     from blixwou.app import Landscape
     from PySide6.QtGui import QPixmap

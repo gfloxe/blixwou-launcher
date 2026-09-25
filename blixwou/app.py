@@ -8,15 +8,15 @@ import struct
 import sys
 import time
 
-from PySide6.QtCore import Qt, QLockFile, QThread, Signal, QTimer, QUrl, QRectF, QSize
+from PySide6.QtCore import Qt, QEvent, QLockFile, QPropertyAnimation, QThread, Signal, QTimer, QUrl, QRectF, QSize
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDialog, QGridLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
-    QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget, QSizePolicy)
+    QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget, QSizePolicy, QMenu, QSystemTrayIcon)
 
 from .auth import Accounts
 from .config import LauncherError, atomic_json, data_root, load_config, load_settings, resource
-from .minecraft import prepare_minecraft, build_command, launch_game, GameSession
+from .minecraft import prepare_minecraft, build_command, launch_game, GameSession, game_window_ready
 from .network import https_url
 from .pack import PackManager
 from .status import server_status
@@ -465,8 +465,26 @@ class MainWindow(QMainWindow):
         self.update_check = None
         self.update_version = None
         self.closing = False
+        self.game_ready = False
+        self.game_ready_observations = 0
+        self.tray_hiding = False
         self.setWindowTitle("BLIXWOU")
         self.setWindowIcon(QIcon(str(resource("assets/blixwou.ico"))))
+        self.tray = QSystemTrayIcon(self.windowIcon(), self)
+        self.tray.setToolTip('BLIXWOU · Minecraft en cours')
+        tray_menu = QMenu(self)
+        self.tray_show_action = tray_menu.addAction('Afficher BLIXWOU')
+        self.tray_show_action.triggered.connect(self.restore_from_tray)
+        self.tray_stop_action = tray_menu.addAction('Arrêter Minecraft')
+        self.tray_stop_action.triggered.connect(self.stop_game)
+        self.tray.setContextMenu(tray_menu)
+        self.tray.activated.connect(self.tray_activated)
+        self.tray_animation = QPropertyAnimation(self, b'windowOpacity', self)
+        self.tray_animation.setDuration(240)
+        self.tray_animation.finished.connect(self.finish_tray_animation)
+        self.game_ready_timer = QTimer(self)
+        self.game_ready_timer.setInterval(750)
+        self.game_ready_timer.timeout.connect(self.check_game_ready)
         self.resize(1280, 720)
         self.setMinimumSize(960, 620)
         scene = Landscape()
@@ -848,6 +866,10 @@ class MainWindow(QMainWindow):
             self.play.setText("Arrêter  ■")
             self.play.setEnabled(True)
             self.hide_operation()
+            self.game_ready = False
+            self.game_ready_observations = 0
+            if self.game_session.process is not None:
+                self.game_ready_timer.start()
         text = step
         if total:
             if total > 100000:
@@ -890,6 +912,8 @@ class MainWindow(QMainWindow):
         self.operation_card.hide()
 
     def show_error(self, message):
+        if self.tray.isVisible():
+            self.restore_from_tray()
         self.step.setText(message)
         self.show_operation('error', 'Une action est requise', message)
         self.bar.hide()
@@ -898,6 +922,12 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "BLIXWOU", message)
 
     def job_finished(self):
+        self.game_ready_timer.stop()
+        self.game_ready = False
+        self.game_ready_observations = 0
+        if self.tray.isVisible() or self.tray_hiding:
+            self.restore_from_tray()
+            self.tray.hide()
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(True)
         self.busy = False
@@ -913,9 +943,7 @@ class MainWindow(QMainWindow):
         if self.updating:
             return
         if self.game_session.process is not None:
-            self.game_session.stop()
-            self.play.setText("Arrêt en cours…")
-            self.play.setEnabled(False)
+            self.stop_game()
             return
         if not self.config.get("manifestUrl"):
             self.show_error("Le pack du serveur BLIXWOU n’est pas encore disponible. Ses mods et sa configuration doivent être ajoutés avant de jouer. Vous pouvez déjà connecter votre compte depuis le profil.")
@@ -939,6 +967,80 @@ class MainWindow(QMainWindow):
             self.step.setText("Session terminée · prêt à jouer")
             self.refresh_profile()
         self.start_job(play, done)
+
+    def stop_game(self):
+        if self.game_session.process is None:
+            return
+        self.game_session.stop()
+        self.play.setText("Arrêt en cours…")
+        self.play.setEnabled(False)
+        self.step.setText("Fermeture de Minecraft…")
+
+    def check_game_ready(self):
+        process = self.game_session.process
+        if process is None or process.poll() is not None:
+            self.game_ready_timer.stop()
+            return
+        if game_window_ready(process):
+            self.game_ready_observations += 1
+            if self.game_ready_observations < 2:
+                return
+            self.game_ready_timer.stop()
+            self.game_ready = True
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                self.step.setText("Minecraft est prêt · BLIXWOU reste dans les icônes cachées")
+                self.hide_to_tray()
+            else:
+                self.step.setText("Minecraft est prêt · zone de notification indisponible")
+        else:
+            self.game_ready_observations = 0
+
+    def hide_to_tray(self):
+        if (not self.game_ready or self.game_session.process is None
+                or not QSystemTrayIcon.isSystemTrayAvailable() or self.isHidden() or self.tray_hiding):
+            return
+        self.tray.show()
+        self.tray_hiding = True
+        self.tray_animation.stop()
+        if self.isMinimized():
+            self.hide()
+            self.tray_hiding = False
+            return
+        self.tray_animation.setStartValue(self.windowOpacity())
+        self.tray_animation.setEndValue(0.0)
+        self.tray_animation.start()
+
+    def finish_tray_animation(self):
+        if self.tray_hiding:
+            if self.game_ready and self.game_session.process is not None:
+                self.hide()
+            self.setWindowOpacity(1.0)
+            self.tray_hiding = False
+
+    def restore_from_tray(self):
+        self.tray_animation.stop()
+        self.tray_hiding = False
+        was_hidden = self.isHidden() or self.isMinimized()
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+        if was_hidden:
+            self.setWindowOpacity(0.2)
+            self.tray_animation.setStartValue(0.2)
+            self.tray_animation.setEndValue(1.0)
+            self.tray_animation.start()
+        else:
+            self.setWindowOpacity(1.0)
+
+    def tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            if self.isHidden() or self.isMinimized() or self.tray_hiding:
+                self.restore_from_tray()
+            elif self.game_ready:
+                self.hide_to_tray()
 
     def open_community_account(self):
         from .firebase_accounts import FirebaseAccounts
@@ -993,7 +1095,17 @@ class MainWindow(QMainWindow):
             margin = max(36, min(96, int(self.width() * .04)))
             self.home_layout.setContentsMargins(margin, 28, margin, 24)
 
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if (event.type() == QEvent.WindowStateChange and self.isMinimized()
+                and self.game_ready and self.tray.isVisible()):
+            QTimer.singleShot(0, self.hide_to_tray)
+
     def closeEvent(self, event):
+        if self.game_ready and self.game_session.process is not None and self.tray.isVisible():
+            event.ignore()
+            self.hide_to_tray()
+            return
         if self.busy:
             if self.job:
                 self.job.requestInterruption()  # Cancels pending OAuth only.
@@ -1007,6 +1119,9 @@ class MainWindow(QMainWindow):
             return
         self.timer.stop()
         self.maintenance_timer.stop()
+        self.game_ready_timer.stop()
+        self.tray_animation.stop()
+        self.tray.hide()
         if self.news_job and self.news_job.isRunning():
             event.ignore()
             QTimer.singleShot(250, self.close)
