@@ -27,6 +27,17 @@ Le démarrage hors session utilisateur nécessite `sudo loginctl enable-linger a
 
 - `GET /health` : disponibilité du service.
 - `GET /v1/server/status` : état exaroton, cache commun de cinq secondes, sans clé côté client.
+- `POST /v1/server/start` : démarre le serveur s’il est éteint ; un verrou et un délai de 60 secondes évitent les demandes simultanées. Les autres joueurs observent le même démarrage. Cette route doit être publiée uniquement avec les limites d’accès et la protection réseau prévues pour le jeu.
+
+`services.server_gateway` est une entrée distincte sur `127.0.0.1:8767` pour
+le menu Minecraft. Elle expose uniquement `/health`, `/v1/server/status` et
+`/v1/server/start` ; les routes de comptes restent privées sur le port 8766.
+Le menu reçoit l'état réel du serveur, pas un pourcentage inventé. La clé API
+exaroton et l'ID du serveur restent dans `private/` sur Debian.
+Sur la machine actuelle, le port HTTPS 443 de Tailscale Funnel publie déjà un
+autre service. Le menu 1.3.0 utilise le port 8443, dirigé vers `127.0.0.1:8767`.
+N'activer ce Funnel qu'après avoir configuré `private/exaroton.token` et
+`private/exaroton-server.txt` et vérifié le démarrage local du gateway.
 - `POST /v1/accounts/register` : JSON `username`, `password`; pseudo ASCII unique sans distinction de casse.
 - `POST /v1/accounts/login` : mêmes champs, renvoie une session de sept jours, révoque l'ancienne.
 - `GET /v1/accounts/me` : en-tête `Authorization: Bearer <session>`.

@@ -5,8 +5,11 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from concurrent.futures import ThreadPoolExecutor
 
 from services.api import Service
+from services.server_gateway import ServerGateway
 
 
 class APITest(unittest.TestCase):
@@ -78,6 +81,42 @@ class APITest(unittest.TestCase):
             db.execute("UPDATE limits SET count=20 WHERE subject='ip:192.0.2.10'")
         self.assertEqual(self.call('/v1/accounts/me', token=token)[0], 401)
         self.assertEqual(self.login()[0], 429)
+
+    def test_simultaneous_players_start_exaroton_once(self):
+        (self.service.folder / 'exaroton.token').write_text('test-token')
+        (self.service.folder / 'exaroton-server.txt').write_text('ABC123456789')
+        calls = []
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): return b'{"success":true}'
+        class Opener:
+            def open(self, request, timeout):
+                calls.append(request.full_url)
+                return Response()
+        with patch.object(self.service, 'status', return_value={'state': 'offline', 'text': 'Hors ligne', 'configured': True}), \
+             patch('services.api.urllib.request.build_opener', return_value=Opener()):
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: self.service.start_server(), range(2)))
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(all(result['state'] == 'starting' for result in results))
+
+    def test_start_without_private_key_fails_closed(self):
+        with self.assertRaises(Exception) as caught:
+            self.service.start_server()
+        self.assertEqual(caught.exception.status, 503)
+
+    def test_public_gateway_exposes_only_server_routes(self):
+        gateway = ServerGateway(self.temp.name)
+        def call(path, method='GET'):
+            codes = []
+            body = b''.join(gateway({'PATH_INFO': path, 'REQUEST_METHOD': method,
+                                     'CONTENT_LENGTH': '0'},
+                                    lambda status, headers: codes.append(int(status.split()[0]))))
+            return codes[0], json.loads(body)
+        self.assertEqual(call('/health')[0], 200)
+        self.assertEqual(call('/v1/accounts/login', 'POST')[0], 404)
+        self.assertEqual(call('/v1/server/start', 'POST')[0], 503)
 
 
 if __name__ == '__main__':

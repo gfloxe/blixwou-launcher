@@ -1,0 +1,17 @@
+[Unit]
+Description=BLIXWOU public server start gateway
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/BLIXWOU-Services
+ExecStart=%h/BLIXWOU-Services/.venv/bin/python -m services.server_gateway
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ReadWritePaths=%h/BLIXWOU-Services/private
+
+[Install]
+WantedBy=default.target

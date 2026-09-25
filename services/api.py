@@ -1,4 +1,4 @@
-"""BLIXWOU accounts and read-only exaroton status. Listen on loopback only."""
+"""BLIXWOU accounts and coordinated exaroton startup. Listen on loopback only."""
 import argparse
 from contextlib import closing
 import hashlib
@@ -33,6 +33,8 @@ class Service:
         self.database = self.folder / 'accounts.sqlite3'
         self.auth_lock = threading.Lock()
         self.status_lock = threading.Lock()
+        self.start_lock = threading.Lock()
+        self.last_start = 0.0
         self.status_time = 0
         self.status_cache = {'state': 'unknown', 'text': 'Indisponible', 'configured': False}
         self.dummy_salt = secrets.token_bytes(32)
@@ -95,15 +97,57 @@ class Service:
                 labels = {0: 'Hors ligne', 1: 'En ligne', 2: 'Démarrage', 3: 'Arrêt',
                           4: 'Redémarrage', 5: 'Sauvegarde', 6: 'Chargement', 7: 'Arrêt inattendu',
                           8: 'En attente', 9: 'Transfert', 10: 'Préparation'}
-                result.update(state='online' if code == 1 else 'offline' if code in (0, 7) else 'unknown',
+                result.update(state='online' if code == 1 else 'offline' if code in (0, 7) else
+                              'starting' if code in (2, 4, 6, 8, 9, 10) else 'stopping' if code in (3, 5) else 'unknown',
                               text=labels.get(code, 'Indisponible'), updated_at=int(time.time()))
                 players = data.get('players', {})
                 if code == 1 and all(type(players.get(k)) is int for k in ('count', 'max')):
                     result.update(online=players['count'], max=players['max'])
+                address, port = data.get('address'), data.get('port')
+                if code == 1 and isinstance(address, str) and re.fullmatch(r'[A-Za-z0-9.-]+', address) \
+                        and type(port) is int and 1 <= port <= 65535:
+                    result.update(address=address, port=port)
             except Exception:
                 pass  # Never log upstream exceptions containing credentials or player data.
             self.status_cache, self.status_time = result, time.monotonic()
             return result
+
+    def start_server(self):
+        """One exaroton start request per transition, shared by all waiting players."""
+        with self.start_lock:
+            current = self.status()
+            if not current['configured'] or current['state'] == 'unknown' and current['text'] == 'Indisponible':
+                raise APIError(503, 'État exaroton indisponible. Réessayez plus tard.')
+            if current['state'] != 'offline':
+                return current
+            now = time.monotonic()
+            if now - self.last_start < 60:
+                return {'state': 'starting', 'text': 'Démarrage demandé', 'configured': True}
+            token = (self.folder / 'exaroton.token').read_text().strip()
+            server = (self.folder / 'exaroton-server.txt').read_text().strip()
+            if not token or not re.fullmatch(r'[A-Za-z0-9]{8,64}', server):
+                raise APIError(503, 'Démarrage du serveur indisponible.')
+            # exaroton documents GET /start/ as its start action. The key never
+            # leaves this Debian service and redirects are refused.
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, *args, **kwargs):
+                    return None
+            req = urllib.request.Request('https://api.exaroton.com/v1/servers/' + server + '/start/',
+                                         headers={'Authorization': 'Bearer ' + token})
+            self.last_start = now
+            try:
+                with urllib.request.build_opener(NoRedirect()).open(req, timeout=8) as response:
+                    body = response.read(65537)
+                if len(body) > 65536 or not json.loads(body).get('success'):
+                    raise ValueError('upstream')
+            except Exception:
+                # A timed-out request might still have reached exaroton. Keep
+                # the cooldown so another player cannot trigger a duplicate.
+                raise APIError(502, 'exaroton n’a pas confirmé le démarrage. Réessayez dans une minute.') from None
+            with self.status_lock:
+                self.status_cache = {'state': 'starting', 'text': 'Démarrage demandé', 'configured': True}
+                self.status_time = time.monotonic()
+            return self.status_cache
 
     def authenticate(self, db, header, ip):
         if db.execute('SELECT 1 FROM banned_ips WHERE ip=?', (ip,)).fetchone():
@@ -124,6 +168,10 @@ class Service:
             return 200, {'service': 'BLIXWOU', 'ok': True}
         if (method, path) == ('GET', '/v1/server/status'):
             return 200, self.status()
+        if (method, path) == ('POST', '/v1/server/start'):
+            if env.get('HTTP_ORIGIN') or env.get('CONTENT_LENGTH') not in (None, '', '0'):
+                raise APIError(400, 'Requête invalide.')
+            return 202, self.start_server()
         if path not in ('/v1/accounts/register', '/v1/accounts/login', '/v1/accounts/me', '/v1/accounts/logout'):
             raise APIError(404, 'Route introuvable.')
         if method != ('GET' if path.endswith('/me') else 'POST'):
