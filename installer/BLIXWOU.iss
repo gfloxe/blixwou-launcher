@@ -33,7 +33,6 @@ AppPublisherURL=https://github.com/gfloxe/BLIXWOU
 CloseApplications=yes
 RestartApplications=no
 DisableProgramGroupPage=yes
-AppMutex=BLIXWOU.Launcher
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"

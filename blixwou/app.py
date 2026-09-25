@@ -22,7 +22,7 @@ from .pack import PackManager
 from .status import server_status
 from .home_ui import GlowButton, dark_titlebar, skin_head, cached_news, fetch_news
 from .updater import LauncherUpdater, available_update
-from .process_guard import require_game_stopped, InstallerMutex
+from .process_guard import require_game_stopped
 
 STYLE = """
 QWidget { color: #f6f3ff; font-family: 'Segoe UI'; font-size: 14px; }
@@ -1171,9 +1171,7 @@ def main():
         return
     handler = RotatingFileHandler(root / "logs" / "launcher.log", maxBytes=2 * 1024**2, backupCount=3, encoding="utf-8")
     logging.basicConfig(level=logging.INFO, handlers=[handler], format="%(asctime)s %(levelname)s %(message)s")
-    installer_mutex = None
     try:
-        installer_mutex = InstallerMutex()
         config = load_config()
         try:
             require_game_stopped(root)
@@ -1195,8 +1193,6 @@ def main():
     except LauncherError as error:
         QMessageBox.critical(None, "BLIXWOU", str(error))
     finally:
-        if installer_mutex:
-            installer_mutex.close()
         lock.unlock()
 
 

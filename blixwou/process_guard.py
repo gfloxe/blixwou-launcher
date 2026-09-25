@@ -5,23 +5,6 @@ import os
 from .config import LauncherError, atomic_json, read_json
 
 
-class InstallerMutex:
-    """Presence mutex consumed by Inno Setup AppMutex."""
-    def __init__(self):
-        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        self.kernel.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
-        self.kernel.CreateMutexW.restype = wintypes.HANDLE
-        self.kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-        self.handle = self.kernel.CreateMutexW(None, False, "BLIXWOU.Launcher")
-        if not self.handle:
-            raise LauncherError("Impossible de verrouiller les mises à jour du launcher.")
-
-    def close(self):
-        if self.handle:
-            self.kernel.CloseHandle(self.handle)
-            self.handle = None
-
-
 def process_birth(pid):
     if os.name != "nt":
         return None
