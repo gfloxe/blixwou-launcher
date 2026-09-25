@@ -118,6 +118,25 @@ class APITest(unittest.TestCase):
         self.assertEqual(call('/v1/accounts/login', 'POST')[0], 404)
         self.assertEqual(call('/v1/server/start', 'POST')[0], 503)
 
+    def test_exaroton_status_reports_phases_and_live_port(self):
+        (self.service.folder / 'exaroton.token').write_text('test-token')
+        (self.service.folder / 'exaroton-server.txt').write_text('ABC123456789')
+        payload = {'success': True, 'data': {'status': 2, 'address': 'BLIXWOU.exaroton.me',
+                                            'port': 48255, 'players': {'count': 0, 'max': 20}}}
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): return json.dumps(payload).encode()
+        class Opener:
+            def open(self, request, timeout): return Response()
+        with patch('services.api.urllib.request.build_opener', return_value=Opener()):
+            self.assertEqual(self.service.status()['state'], 'starting')
+            payload['data']['status'] = 1
+            self.service.status_time = 0
+            online = self.service.status()
+        self.assertEqual((online['state'], online['address'], online['port']),
+                         ('online', 'BLIXWOU.exaroton.me', 48255))
+
 
 if __name__ == '__main__':
     unittest.main()
