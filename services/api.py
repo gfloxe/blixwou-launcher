@@ -80,7 +80,8 @@ class Service:
                     raise ValueError('configuration')
                 result['configured'] = True
                 req = urllib.request.Request('https://api.exaroton.com/v1/servers/' + server + '/',
-                                             headers={'Authorization': 'Bearer ' + token})
+                                             headers={'Authorization': 'Bearer ' + token,
+                                                      'User-Agent': 'BLIXWOU-Services/1.0'})
                 # No redirects with a secret Authorization header.
                 class NoRedirect(urllib.request.HTTPRedirectHandler):
                     def redirect_request(self, *args, **kwargs):
@@ -133,7 +134,8 @@ class Service:
                 def redirect_request(self, *args, **kwargs):
                     return None
             req = urllib.request.Request('https://api.exaroton.com/v1/servers/' + server + '/start/',
-                                         headers={'Authorization': 'Bearer ' + token})
+                                         headers={'Authorization': 'Bearer ' + token,
+                                                  'User-Agent': 'BLIXWOU-Services/1.0'})
             self.last_start = now
             try:
                 with urllib.request.build_opener(NoRedirect()).open(req, timeout=8) as response:

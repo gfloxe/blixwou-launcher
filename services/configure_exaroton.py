@@ -8,15 +8,21 @@ import urllib.request
 
 
 def main():
-    if not __import__('sys').stdin.isatty():
-        raise SystemExit('Lancez cette commande dans votre session SSH interactive.')
-    token = getpass.getpass('Clé API exaroton (saisie masquée) : ').strip()
+    argv = __import__('sys').argv[1:]
+    if argv == ['--stored']:
+        token = (Path.home() / 'BLIXWOU-Services/private/exaroton.token').read_text().strip()
+    else:
+        if argv or not __import__('sys').stdin.isatty():
+            raise SystemExit('Lancez ce script dans une session SSH interactive ou avec --stored.')
+        token = getpass.getpass('Clé API exaroton (saisie masquée) : ').strip()
     if not token:
         raise SystemExit('Aucune clé saisie.')
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):
             return None
-    request = urllib.request.Request('https://api.exaroton.com/v1/servers/', headers={'Authorization': 'Bearer ' + token})
+    request = urllib.request.Request('https://api.exaroton.com/v1/servers/',
+                                     headers={'Authorization': 'Bearer ' + token,
+                                              'User-Agent': 'BLIXWOU-Services/1.0'})
     try:
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=10) as response:
             document = json.load(response)
