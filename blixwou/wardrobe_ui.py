@@ -1,18 +1,18 @@
 """Lightweight textured cuboid preview rendered in a QOpenGLWidget."""
 import math
+import re
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QPointF, QRectF, QSize
 from PySide6.QtGui import QImage, QPixmap, QIcon, QPainter, QPolygonF, QTransform, QColor
-from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QFileDialog, QInputDialog, QMessageBox, QComboBox,
-    QFrame, QSizePolicy)
+    QFrame, QSizePolicy, QStackedWidget)
 from .config import LauncherError
 from .skins import Wardrobe, LIMIT, import_premium
 
 
-class SkinPreview(QOpenGLWidget):
+class SkinPreview(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumSize(280, 300)
@@ -40,22 +40,24 @@ class SkinPreview(QOpenGLWidget):
         self.model = model
         self.update()
 
-    def paintGL(self):
-        # Rasterize small textured faces together to avoid driver-dependent
-        # seams from Qt's OpenGL texture atlas, then present one GL surface.
-        canvas = QImage(self.size(), QImage.Format_ARGB32_Premultiplied)
-        painter = QPainter(canvas)
+    def paintEvent(self, event):
+        painter = QPainter(self)
         self.paint_scene(painter)
         painter.end()
-        display = QPainter(self)
-        display.drawImage(0, 0, canvas)
-        display.end()
 
     def paint_scene(self, painter):
         painter.fillRect(self.rect(), QColor('#120d1c'))
         if self.image.isNull():
+            cx, cy = self.width() // 2, self.height() // 2 - 20
+            painter.fillRect(cx - 30, cy - 86, 60, 60, QColor('#4c365f'))
+            painter.fillRect(cx - 37, cy - 17, 74, 80, QColor('#372747'))
+            painter.fillRect(cx - 64, cy - 17, 24, 74, QColor('#2d213b'))
+            painter.fillRect(cx + 40, cy - 17, 24, 74, QColor('#2d213b'))
+            painter.fillRect(cx - 34, cy + 65, 29, 54, QColor('#2d213b'))
+            painter.fillRect(cx + 5, cy + 65, 29, 54, QColor('#2d213b'))
             painter.setPen(QColor('#c9b4e3'))
-            painter.drawText(self.rect(), Qt.AlignCenter, 'Ajoute un skin pour le découvrir ici')
+            painter.drawText(QRectF(0, cy + 123, self.width(), 38), Qt.AlignCenter,
+                             'Ajoute un skin pour le découvrir ici')
             return
         painter.setRenderHint(QPainter.Antialiasing)
         faces = []
@@ -141,7 +143,14 @@ class WardrobePage(QWidget):
         self.list=QListWidget()
         self.list.setIconSize(QSize(48,48))
         self.list.currentRowChanged.connect(self.select)
-        library_layout.addWidget(self.list, 1)
+        self.library_stack = QStackedWidget()
+        self.library_stack.addWidget(self.list)
+        self.empty_library = QLabel('Aucun skin pour le moment.\n\nImporte un PNG ou cherche un pseudo pour commencer.')
+        self.empty_library.setObjectName('emptyLibrary')
+        self.empty_library.setWordWrap(True)
+        self.empty_library.setAlignment(Qt.AlignCenter)
+        self.library_stack.addWidget(self.empty_library)
+        library_layout.addWidget(self.library_stack, 1)
         import_row = QHBoxLayout()
         import_file = QPushButton('＋  Importer un PNG')
         import_file.setObjectName('secondaryAction')
@@ -182,20 +191,22 @@ class WardrobePage(QWidget):
         self.model.addItem('Slim · bras fins','slim')
         self.model.currentIndexChanged.connect(self.change_model)
         controls_layout.addWidget(self.model)
+        self.selection_actions = []
         for label, callback in [('Renommer', self.rename), ('Supprimer', self.delete)]:
             button = QPushButton(label)
             button.setObjectName('secondaryAction')
             button.clicked.connect(callback)
             controls_layout.addWidget(button)
+            self.selection_actions.append(button)
         reset=QPushButton('Sans skin personnalisé')
         reset.setObjectName('secondaryAction')
         reset.clicked.connect(self.clear_active)
         controls_layout.addWidget(reset)
         controls_layout.addStretch()
-        use = QPushButton('Utiliser ce skin  ›')
-        use.setObjectName('primaryAction')
-        use.clicked.connect(self.use)
-        controls_layout.addWidget(use)
+        self.use_button = QPushButton('Utiliser ce skin  ›')
+        self.use_button.setObjectName('primaryAction')
+        self.use_button.clicked.connect(self.use)
+        controls_layout.addWidget(self.use_button)
         layout.addWidget(controls)
         self.notice=QLabel('')
         self.notice.setObjectName('skinNotice')
@@ -215,11 +226,14 @@ class WardrobePage(QWidget):
     QListWidget::item { border-radius: 9px; color: #d9cfdf; margin: 3px; padding: 9px; }
     QListWidget::item:hover { background: #24172f; }
     QListWidget::item:selected { background: #60358a; color: white; }
+    QLabel#emptyLibrary { background: #110c18; border: 1px solid #2e213a;
+        border-radius: 12px; color: #b9acc8; padding: 22px; font-size: 13px; }
     QComboBox { background: #21172b; border: 1px solid #49355c; border-radius: 9px; padding: 10px 14px; min-width: 175px; }
     QPushButton#secondaryAction { background: #21172b; border: 1px solid #49355c; padding: 10px 14px; }
     QPushButton#secondaryAction:hover { background: #322040; border-color: #9d67da; }
     QPushButton#primaryAction { background: #9454ef; border: 1px solid #c69cff; font-size: 15px; font-weight: 700; padding: 12px 24px; }
     QPushButton#primaryAction:hover { background: #ab6bff; }
+    QPushButton#primaryAction:disabled { background: #33253f; border-color: #4b395a; color: #8c7c9d; }
     """
 
     def attempt(self, action):
@@ -235,14 +249,18 @@ class WardrobePage(QWidget):
         self.entries=self.store.entries()
         self.count.setText(f"{len(self.entries)} SKIN" + ('S' if len(self.entries) != 1 else ''))
         self.list.clear()
-        for entry in self.entries:
+        self.library_stack.setCurrentWidget(self.list if self.entries else self.empty_library)
+        for number, entry in enumerate(self.entries, 1):
             image=QImage(str(self.store.path(entry)))
             face=image.copy(8,8,8,8)
             if not face.isNull():
                 painter=QPainter(face)
                 painter.drawImage(0,0,image.copy(40,8,8,8))
                 painter.end()
-            label=entry['name'] + ('  · Actif' if entry['active'] else '')
+            name = entry['name']
+            if re.fullmatch(r'[0-9a-f]{12,}', name, re.I):
+                name = f'Skin {number}'
+            label=name + ('  · Actif' if entry['active'] else '')
             self.list.addItem(QListWidgetItem(QIcon(QPixmap.fromImage(face).scaled(48,48)),label))
         row=next((i for i,e in enumerate(self.entries) if previous and e['id']==previous['id']),
                  next((i for i,e in enumerate(self.entries) if e['active']),0))
@@ -263,6 +281,10 @@ class WardrobePage(QWidget):
         self.model.blockSignals(False)
         self.preview.set_skin(self.store.path(entry) if entry else None,entry['model'] if entry else 'classic')
         self.active_badge.setText('ACTIF' if entry and entry.get('active') else 'APERÇU')
+        self.model.setEnabled(bool(entry))
+        self.use_button.setEnabled(bool(entry))
+        for button in self.selection_actions:
+            button.setEnabled(bool(entry))
 
     def import_file(self):
         path,_=QFileDialog.getOpenFileName(self,'Importer un skin','','Skin PNG (*.png)')
