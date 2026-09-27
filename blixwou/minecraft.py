@@ -18,7 +18,17 @@ from .network import download, get_json, request, digest, https_url
 from .process_guard import require_game_stopped, record_game
 
 MOJANG_MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
-NEOFORGE_VERSIONS = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"
+
+
+def neoforge_installer(neo):
+    """Verify the exact published installer, including older Maven releases."""
+    url = f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{neo}/neoforge-{neo}-installer.jar"
+    with request("GET", url + ".sha256") as response:
+        parts = response.text.strip().split()
+    checksum = parts[0].lower() if parts else ""
+    if not re.fullmatch(r"[a-f0-9]{64}", checksum):
+        raise LauncherError("L’empreinte officielle de NeoForge est invalide.")
+    return url, checksum
 
 
 def within(root, path):
@@ -60,8 +70,11 @@ def prepare_minecraft(root, manifest, settings, progress):
     progress("Vérification des versions officielles", 0, 0)
     official = get_json(MOJANG_MANIFEST)
     mc = next((v for v in official["versions"] if v["id"] == versions["minecraft"]), None)
-    if mc is None or neo not in get_json(NEOFORGE_VERSIONS)["versions"]:
-        raise LauncherError("La version demandée n’existe pas dans les catalogues officiels.")
+    if mc is None:
+        raise LauncherError("La version Minecraft demandée n’existe pas dans le catalogue officiel.")
+    # NeoForge's versions API can omit old releases that are still published.
+    # The exact installer's official checksum remains available in Maven.
+    installer_url, installer_checksum = neoforge_installer(neo)
     java = ensure_java(root, settings["javaPath"], progress)
     # Keep libraries/assets separate from user saves and managed pack files.
     engine = root / "minecraft"
@@ -107,13 +120,8 @@ def prepare_minecraft(root, manifest, settings, progress):
                 healthy = False
                 break
     if not healthy:
-        url = f"https://maven.neoforged.net/releases/net/neoforged/neoforge/{neo}/neoforge-{neo}-installer.jar"
-        with request("GET", url + ".sha256") as response:
-            checksum = response.text.strip().split()[0].lower()
-        if not re.fullmatch(r"[a-f0-9]{64}", checksum):
-            raise LauncherError("L’empreinte officielle de NeoForge est invalide.")
         jar = root / "downloads" / f"neoforge-{neo}-installer.jar"
-        download(url, jar, checksum, progress=lambda n,t: progress("Téléchargement de NeoForge " + neo, n,t))
+        download(installer_url, jar, installer_checksum, progress=lambda n,t: progress("Téléchargement de NeoForge " + neo, n,t))
         with zipfile.ZipFile(jar) as archive:
             profile = json.loads(archive.read("install_profile.json"))
             if profile.get("minecraft") != "1.21.1":

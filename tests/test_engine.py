@@ -7,7 +7,7 @@ import pytest
 from blixwou.auth import offline_profile
 from blixwou.config import LauncherError, atomic_json, DEFAULT_SETTINGS
 from blixwou.java import extract_java
-from blixwou.minecraft import build_command
+from blixwou.minecraft import build_command, prepare_minecraft
 from blixwou.minecraft import ready_game_title
 from blixwou.process_guard import process_birth, record_game, require_game_stopped
 
@@ -84,3 +84,33 @@ def test_neoforge_loading_window_is_not_considered_ready():
     assert not ready_game_title('Minecraft : Chargement')
     assert not ready_game_title('Java Platform SE binary')
     assert ready_game_title('Minecraft NeoForge* 1.21.1')
+
+
+def test_published_neoforge_installer_is_accepted_when_versions_api_omits_it(tmp_path, monkeypatch):
+    import blixwou.minecraft as minecraft
+
+    neo = '21.1.250'
+    engine = tmp_path / 'minecraft'
+    installed_file = engine / 'versions' / ('neoforge-' + neo) / 'marker.bin'
+    installed_file.parent.mkdir(parents=True)
+    installed_file.write_bytes(b'installed')
+    atomic_json(tmp_path / 'neoforge-installed.json', {
+        'version': neo, 'files': {installed_file.relative_to(engine).as_posix(): 'expected'}
+    })
+    def official_manifest(url):
+        assert url == minecraft.MOJANG_MANIFEST
+        return {'versions': [{'id': '1.21.1', 'url': 'https://example.com/1.21.1.json', 'sha1': 'a' * 40}]}
+    def fake_download(url, target, *args, **kwargs):
+        if str(target).endswith('1.21.1.json'):
+            atomic_json(target, {'javaVersion': {'majorVersion': 21}, 'libraries': [],
+                                 'downloads': {'client': {'url': 'https://example.com/client.jar', 'sha1': 'b' * 40, 'size': 1}}})
+    monkeypatch.setattr(minecraft, 'get_json', official_manifest)
+    monkeypatch.setattr(minecraft, 'neoforge_installer', lambda version: ('https://example.com/installer.jar', 'c' * 64))
+    monkeypatch.setattr(minecraft, 'ensure_java', lambda *args: 'java')
+    monkeypatch.setattr(minecraft, 'download', fake_download)
+    monkeypatch.setattr(minecraft, 'digest', lambda path: 'expected')
+    monkeypatch.setattr(minecraft.install, 'install_libraries', lambda *args, **kwargs: None)
+    monkeypatch.setattr(minecraft.install, 'install_assets', lambda *args, **kwargs: None)
+
+    manifest = {'versions': {'minecraft': '1.21.1', 'neoforge': neo, 'java': 21}}
+    assert prepare_minecraft(tmp_path, manifest, DEFAULT_SETTINGS, lambda *args: None) == ('java', 'neoforge-' + neo)
