@@ -883,7 +883,7 @@ class MainWindow(QMainWindow):
             self.stop_game()
             return
         if not self.config.get("manifestUrl"):
-            self.show_error("Le pack du serveur BLIXWOU n’est pas encore disponible. Ses mods et sa configuration doivent être ajoutés avant de jouer. Vous pouvez déjà connecter votre compte depuis le profil.")
+            self.show_error("Le pack du serveur BLIXWOU n’est pas encore disponible. Ses mods et sa configuration doivent être ajoutés avant de jouer. Vous pouvez déjà connecter votre compte BLIXWOU.")
             return
         if not self.community_accounts.path.exists():
             self.open_community_account()
@@ -1050,7 +1050,7 @@ class MainWindow(QMainWindow):
         if self.busy:
             if self.job:
                 self.job.requestInterruption()  # Cancels pending OAuth only.
-            QMessageBox.information(self, "BLIXWOU est actif", "Fermez Minecraft ou attendez la fin de l’installation avant de quitter le launcher. Une connexion Microsoft en attente vient d’être annulée.")
+            QMessageBox.information(self, "BLIXWOU est actif", "Fermez Minecraft ou attendez la fin de l’installation avant de quitter le launcher.")
             event.ignore()
             return
         self.closing = True
