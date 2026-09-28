@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDia
     QFrame, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QProgressBar,
     QPushButton, QSpinBox, QVBoxLayout, QWidget, QStackedWidget, QSizePolicy, QMenu, QSystemTrayIcon)
 
-from .auth import Accounts
+from .firebase_accounts import FirebaseAccounts
 from .config import LauncherError, atomic_json, data_root, load_config, load_settings, resource
 from .minecraft import prepare_minecraft, build_command, launch_game, GameSession, game_window_ready
 from .network import https_url
@@ -387,63 +387,6 @@ class SettingsDialog(QDialog):
         self.accept()
 
 
-class ProfileDialog(QDialog):
-    def __init__(self, accounts, parent):
-        super().__init__(parent)
-        self.accounts = accounts
-        self.choice = None
-        self.setWindowTitle("Votre profil · BLIXWOU")
-        self.setMinimumWidth(450)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(28, 28, 28, 28)
-        title = QLabel("Choisissez votre profil")
-        title.setStyleSheet("font-size: 23px; font-weight: 600;")
-        layout.addWidget(title)
-        microsoft = QPushButton("Choisir un compte Microsoft")
-        microsoft.clicked.connect(self.microsoft)
-        layout.addWidget(microsoft)
-        note = QLabel("Choisissez un compte existant ou utilisez un autre compte.\nConnexion dans le navigateur · Accès Java vérifié")
-        note.setObjectName("muted")
-        layout.addWidget(note)
-        layout.addSpacing(18)
-        layout.addWidget(QLabel("Profil hors ligne"))
-        self.name = QLineEdit()
-        self.name.setPlaceholderText("Votre pseudo")
-        self.name.setMaxLength(16)
-        selected = accounts.selected()
-        if selected and selected["mode"] == "offline":
-            self.name.setText(selected["name"])
-        layout.addWidget(self.name)
-        offline = QPushButton("Utiliser ce pseudo hors ligne")
-        offline.clicked.connect(self.offline)
-        layout.addWidget(offline)
-        self.name.returnPressed.connect(self.offline)
-        notice = QLabel("Ce profil ne constitue pas une identité Microsoft.\nLa protection des pseudos dépend du serveur.")
-        notice.setObjectName("muted")
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
-        if selected:
-            logout = QPushButton("Déconnecter le profil")
-            logout.clicked.connect(self.logout)
-            layout.addWidget(logout)
-
-    def microsoft(self):
-        self.choice = "microsoft"
-        self.accept()
-
-    def offline(self):
-        try:
-            self.accounts.save_offline(self.name.text().strip())
-            self.choice = "offline"
-            self.accept()
-        except LauncherError as error:
-            QMessageBox.warning(self, "Pseudo invalide", str(error))
-
-    def logout(self):
-        self.accounts.logout()
-        self.accept()
-
-
 class MainWindow(QMainWindow):
     shutdown_requested = Signal()
     update_problem = Signal(str)
@@ -451,7 +394,7 @@ class MainWindow(QMainWindow):
     def __init__(self, root, config, network=True):
         super().__init__()
         self.root, self.config, self.network = root, config, network
-        self.accounts = Accounts(root, config["microsoft"])
+        self.community_accounts = FirebaseAccounts(root, config['firebase'])
         self.manifest = None
         self.busy = False
         self.game_session = GameSession()
@@ -510,11 +453,9 @@ class MainWindow(QMainWindow):
             button.setStyleSheet("QPushButton { background: transparent; border: 0; padding: 10px 22px; color: #c6bad7; } QPushButton:checked { background: #372349; color: #ecdfff; border-bottom: 2px solid #b782ff; } QPushButton:hover { background: #2e203e; }")
             nav.addWidget(button)
         nav.addStretch()
-        self.community_accounts = None
         self.community_button = QPushButton('Compte BLIXWOU')
         self.community_button.setToolTip('Connexion au compte communautaire BLIXWOU')
         self.community_button.clicked.connect(self.open_community_account)
-        self.community_button.setVisible(bool(config.get('firebase')))
         nav.addWidget(self.community_button)
         shell_layout.addLayout(nav)
         self.pages = QStackedWidget()
@@ -573,7 +514,8 @@ class MainWindow(QMainWindow):
         self.progress_panel = QWidget()
         progress_layout = QVBoxLayout(self.progress_panel)
         progress_layout.setContentsMargins(0, 4, 0, 0)
-        self.step = QLabel("Prêt à jouer")
+        self.step = QLabel("Prêt à jouer" if self.community_accounts.path.exists()
+                           else "Connectez-vous à votre compte BLIXWOU pour jouer")
         self.step.setWordWrap(True)
         progress_layout.addWidget(self.step)
         self.orphan_warning = QLabel()
@@ -741,7 +683,7 @@ class MainWindow(QMainWindow):
         if self.config.get("manifestUrl"):
             self.start_job(lambda progress, cancelled: self.sync_pack(progress), self.pack_ready)
         else:
-            self.step.setText("Le pack BLIXWOU n’est pas encore disponible. La connexion Microsoft reste accessible depuis le profil.")
+            self.step.setText("Le pack BLIXWOU n’est pas encore disponible. Connectez-vous à votre compte BLIXWOU en attendant.")
             self.hide_operation()
             self.progress_panel.show()
 
@@ -768,20 +710,8 @@ class MainWindow(QMainWindow):
             self.show_error(str(error))
 
     def refresh_profile(self):
-        profile = self.accounts.selected()
-        if profile:
-            self.profile.setText(f"  {profile['name']}")
-        else:
-            self.profile.setText("  Choisir un profil")
-
+        self.profile.setText("  " + (self.community_accounts.username or "Compte BLIXWOU"))
         self.profile.setIcon(QIcon(skin_head(self.root)))
-
-    def choose_profile(self):
-        dialog = ProfileDialog(self.accounts, self)
-        if dialog.exec() == QDialog.Accepted:
-            self.refresh_profile()
-            if dialog.choice == "microsoft":
-                self.start_job(lambda progress, cancelled: self.accounts.login(progress, cancelled), lambda result: self.refresh_profile())
 
     def check_status(self):
         if self.status_job is not None:
@@ -955,15 +885,18 @@ class MainWindow(QMainWindow):
         if not self.config.get("manifestUrl"):
             self.show_error("Le pack du serveur BLIXWOU n’est pas encore disponible. Ses mods et sa configuration doivent être ajoutés avant de jouer. Vous pouvez déjà connecter votre compte depuis le profil.")
             return
-        if not self.accounts.selected():
-            self.choose_profile()
-            return
+        if not self.community_accounts.path.exists():
+            self.open_community_account()
+            if not self.community_accounts.username:
+                return
         def play(progress, cancelled):
+            progress("Vérification du compte BLIXWOU", 0, 0)
+            self.community_accounts.launch_profile()
             manifest = self.sync_pack(progress)
             java, version = prepare_minecraft(self.root, manifest, load_settings(self.root), progress)
-            # Refresh after installation so access tokens don't expire during downloads.
-            progress("Vérification du profil", 0, 0)
-            profile = self.accounts.for_launch()
+            # Check the Firebase session and ban again after lengthy downloads.
+            progress("Vérification du compte BLIXWOU", 0, 0)
+            profile = self.community_accounts.launch_profile()
             args = build_command(self.root, version, java, load_settings(self.root), profile, manifest["server"])
             from .skins import Wardrobe
             Wardrobe(self.root).export_active(self.root / 'game')
@@ -1050,11 +983,12 @@ class MainWindow(QMainWindow):
                 self.hide_to_tray()
 
     def open_community_account(self):
-        from .firebase_accounts import FirebaseAccounts
         from .firebase_ui import FirebaseDialog
-        if self.community_accounts is None:
-            self.community_accounts = FirebaseAccounts(self.root, self.config['firebase'])
         FirebaseDialog(self.community_accounts, self).exec()
+        self.refresh_profile()
+        if not self.busy:
+            self.step.setText("Prêt à jouer" if self.community_accounts.username
+                              else "Connectez-vous à votre compte BLIXWOU pour jouer")
 
     def open_wardrobe(self):
         if self.wardrobe_page is None:

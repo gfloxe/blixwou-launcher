@@ -1,4 +1,4 @@
-"""Community accounts via Firebase REST; never used as Minecraft credentials."""
+"""BLIXWOU accounts via Firebase REST; the game uses their reserved username."""
 import json
 import os
 import re
@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 import requests
 
-from .auth import protect
+from .auth import offline_profile, protect
 from .config import LauncherError
 from .network import request
 
@@ -117,6 +117,15 @@ class FirebaseAccounts:
                              data={'grant_type': 'refresh_token', 'refresh_token': refresh})
         self.save_session({'idToken': response['id_token'], 'refreshToken': response['refresh_token'], 'localId': response['user_id']})
         return self.profile()
+
+    def launch_profile(self):
+        """Refresh Firebase and derive the local game identity from its reserved name."""
+        if not self.path.exists():
+            raise LauncherError('Connectez-vous à votre compte BLIXWOU avant de jouer.')
+        username = self.resume()
+        if not username:
+            raise LauncherError('Validez le pseudo de votre compte BLIXWOU avant de jouer.')
+        return offline_profile(username)
 
     def headers(self):
         if not self.session:

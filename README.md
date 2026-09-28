@@ -1,8 +1,8 @@
 # BLIXWOU — launcher Minecraft Java pour Windows x64
 
-Application native en français, exclusivement configurée pour `BLIXWOU.exaroton.me:48255`. Le projet contient l’interface Qt, l’installation réelle de Minecraft/NeoForge/Java, les profils Microsoft et hors ligne, la mise à jour du pack, WinSparkle et le script d’installateur Inno Setup.
+Application native en français, exclusivement configurée pour `BLIXWOU.exaroton.me:48255`. Le projet contient l’interface Qt, l’installation réelle de Minecraft/NeoForge/Java, la connexion Firebase BLIXWOU, la mise à jour du pack, WinSparkle et le script d’installateur Inno Setup.
 
-**Migration Minecraft 1.21.1 / NeoForge 21.1.250.** Le launcher utilise Java 21 et synchronise le pack GitHub à chaque lancement. Le dépôt doit publier un manifeste correspondant à cette version. La connexion Microsoft reste soumise à l’approbation de l’application par Minecraft Services.
+**Migration Minecraft 1.21.1 / NeoForge 21.1.250.** Le launcher utilise Java 21 et synchronise le pack GitHub à chaque lancement. Le dépôt doit publier un manifeste correspondant à cette version. Jouer exige désormais un compte Firebase BLIXWOU avec un pseudo réservé ; le profil de jeu reste de type hors ligne et nécessite une configuration compatible du serveur. Voir [les limites de la vérification côté launcher](docs/FIREBASE.md).
 
 ## Ouvrir l’application
 
@@ -61,8 +61,8 @@ La version de l’application doit être mise à jour ensemble dans `pyproject.t
 - Python 3.12 + PySide6/Qt : interface native, tâches réseau hors du thread graphique et code maintenable. PyInstaller embarque Python et Qt pour les joueurs.
 - `minecraft-launcher-lib` 8.0 : résolution des bibliothèques, ressources, règles et arguments Minecraft. Son téléchargement est adapté dans un module isolé pour assurer HTTPS, empreintes et remplacement atomique. NeoForge est installé par son propre JAR officiel.
 - Java : Eclipse Temurin 21 x64 depuis l’API Adoptium, archive vérifiée SHA-256 avant extraction. Le Java personnalisé doit être un exécutable Java 21 64 bits valide.
-- Microsoft : navigateur système, OAuth avec PKCE/S256 et `state`, Xbox Live/XSTS, Minecraft Services, vérification des droits Java puis du profil. Renouvellement juste avant le lancement ; refresh token chiffré avec DPAPI lié à l’utilisateur Windows. Aucun mot de passe ni client secret demandé.
-- Hors ligne : UUID `OfflinePlayer:<pseudo>`, jeton nul et type `legacy`. Aucune fausse identité Microsoft. La coexistence des profils et la protection des pseudos sont à mettre en œuvre côté serveur.
+- Compte BLIXWOU : Firebase Authentication conserve le compte ; Firestore réserve un pseudo unique. Le launcher actualise la session et contrôle le bannissement avant de lancer le jeu. Le mot de passe n’est pas conservé localement ; le jeton de session est chiffré avec DPAPI Windows.
+- Profil de jeu : UUID `OfflinePlayer:<pseudo Firebase>`, jeton nul et type `legacy`. Le launcher ne propose plus Microsoft ni un pseudo libre. Le serveur doit encore vérifier lui-même le compte pour empêcher l’usurpation d’identité.
 - Statut : Server List Ping direct, toutes les 30 secondes. Une réponse protocolaire donne « En ligne », un refus de connexion « Hors ligne », un délai/DNS/réponse illisible « Indisponible ». Une réponse de proxy décrit ce point d’entrée, pas une garantie que l’authentification et tous les mods fonctionneront.
 - Pack : comparaison SHA-256 et réparation à chaque démarrage et avant Jouer. Fichiers temporaires vérifiés, sauvegardes de transaction, récupération après crash. Un fichier non géré en conflit bloque la mise à jour au lieu d’être écrasé. Les configurations `seed` sont conservées. Les anciens mods gérés retirés du manifeste sont supprimés, même modifiés, pour éviter les doublons ; les configurations et resourcepacks obsolètes modifiés restent préservés.
 - Lancement : Quick Play multijoueur vers l’adresse du manifeste ; verrou interprocessus, bouton désactivé pendant les opérations et suivi du PID/date de création de Java après crash du launcher.

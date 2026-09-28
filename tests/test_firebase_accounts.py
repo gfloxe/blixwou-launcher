@@ -67,6 +67,20 @@ def test_refresh_rotates_saved_tokens(accounts, monkeypatch):
     assert accounts.session['refreshToken'] == 'new-refresh'
 
 
+def test_game_identity_comes_only_from_refreshed_firebase_name(accounts, monkeypatch):
+    with pytest.raises(LauncherError, match='Connectez-vous'):
+        accounts.launch_profile()
+    accounts.save_session(SESSION)
+    monkeypatch.setattr(accounts, 'resume', lambda: 'gfloxe')
+    profile = accounts.launch_profile()
+    assert profile['name'] == 'gfloxe'
+    assert profile['mode'] == 'offline'
+    assert profile['access_token'] == '0'
+    monkeypatch.setattr(accounts, 'resume', lambda: None)
+    with pytest.raises(LauncherError, match='Validez le pseudo'):
+        accounts.launch_profile()
+
+
 def test_ban_revokes_local_session(accounts, monkeypatch):
     accounts.save_session(SESSION)
     monkeypatch.setattr(accounts, 'call', lambda *args, **kwargs: {'fields': {}})

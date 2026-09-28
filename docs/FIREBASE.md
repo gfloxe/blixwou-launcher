@@ -1,8 +1,17 @@
 # Comptes communautaires Firebase
 
 Le bouton **Compte BLIXWOU** ouvre l'inscription, la connexion, la réservation du
-pseudo et la récupération de mot de passe. Il ne modifie pas les profils Minecraft,
-les licences, la garde-robe, ni les sessions du serveur de jeu.
+pseudo et la récupération de mot de passe. Le launcher ne propose plus de choix
+Microsoft ni de pseudo libre : avant Jouer, il vérifie la session Firebase et le
+bannissement, puis lance Minecraft avec le pseudo réservé. La session de jeu
+reste techniquement un profil Minecraft hors ligne ; Firebase ne fournit pas de
+jeton Minecraft officiel. Les anciens fichiers de profil locaux sont conservés,
+mais ne sont plus utilisés pour lancer le jeu.
+
+Cette vérification côté launcher ne protège pas encore le serveur contre un
+client Minecraft modifié qui usurpe un pseudo. Pour réserver effectivement les
+pseudos en jeu, le serveur doit vérifier l'identité Firebase pendant la connexion.
+Un serveur en `online-mode=true` refusera par ailleurs ce profil hors ligne.
 
 La configuration publique du projet `blixwou` est dans `launcher-config.json`.
 La clé Web Firebase n'est pas une clé d'administration. Aucun compte de service ni

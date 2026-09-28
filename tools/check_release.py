@@ -9,7 +9,7 @@ from blixwou.pack import validate
 
 config = load_config()
 missing = []
-for name, value in [("manifestUrl", config["manifestUrl"]), ("microsoft.clientId", config["microsoft"]["clientId"]), ("launcherUpdate.appcastUrl", config["launcherUpdate"]["appcastUrl"]), ("launcherUpdate.ed25519PublicKey", config["launcherUpdate"]["ed25519PublicKey"])]:
+for name, value in [("manifestUrl", config["manifestUrl"]), ("firebase.projectId", config["firebase"]["projectId"]), ("firebase.apiKey", config["firebase"]["apiKey"]), ("launcherUpdate.appcastUrl", config["launcherUpdate"]["appcastUrl"]), ("launcherUpdate.ed25519PublicKey", config["launcherUpdate"]["ed25519PublicKey"])]:
     if not value:
         missing.append(name)
 if missing:
@@ -20,4 +20,4 @@ if len(base64.b64decode(config["launcherUpdate"]["ed25519PublicKey"], validate=T
 manifest = validate(get_json(config["manifestUrl"]), Path("output/release-validation-game"))
 if config["neoforge"] and config["neoforge"] != manifest["versions"]["neoforge"]:
     sys.exit("NeoForge diffère entre configuration et manifeste.")
-print("Configuration de publication vérifiée. Testez encore le parcours Microsoft et une connexion au serveur.")
+print("Configuration de publication vérifiée. Testez encore la connexion Firebase et une connexion au serveur.")

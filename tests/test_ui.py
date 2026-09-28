@@ -1,7 +1,7 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
-from blixwou.app import MainWindow, SettingsDialog, ProfileDialog, STYLE
+from blixwou.app import MainWindow, SettingsDialog, STYLE
 from blixwou.config import load_config, load_settings
 
 
@@ -133,18 +133,16 @@ def test_background_cache_survives_repaint_and_refreshes_on_resize():
     view.close()
 
 
-def test_profile_settings_and_empty_socials(tmp_path):
+def test_firebase_profile_settings_and_empty_socials(tmp_path):
     app = QApplication.instance() or QApplication([])
     app.setStyleSheet(STYLE)
     window = MainWindow(tmp_path, load_config(), network=False)
     window.show()
     app.processEvents()
     assert all(button.isHidden() for button in window.social_buttons.values())
-    dialog = ProfileDialog(window.accounts, window)
-    dialog.name.setText("BlixPlayer")
-    dialog.offline()
+    window.community_accounts.username = 'blixplayer'
     window.refresh_profile()
-    assert window.profile.text().strip() == "BlixPlayer"
+    assert window.profile.text().strip() == "blixplayer"
     assert "hors ligne" not in window.profile.text().lower()
     settings = SettingsDialog(tmp_path, window)
     settings.ram.setValue(6144)
@@ -152,7 +150,24 @@ def test_profile_settings_and_empty_socials(tmp_path):
     assert load_settings(tmp_path)["ramMb"] == 6144
     window.set_status({"state": "unknown", "text": "Indisponible"})
     assert "Indisponible" in window.status_label.text()
-    window.accounts.logout()
-    assert window.accounts.selected() is None
+    window.community_accounts.logout()
+    window.refresh_profile()
+    assert window.profile.text().strip() == 'Compte BLIXWOU'
     window.close()
     app.processEvents()
+
+
+def test_play_requires_firebase_instead_of_legacy_profile(tmp_path, monkeypatch):
+    from blixwou.config import atomic_json
+
+    app = QApplication.instance() or QApplication([])
+    atomic_json(tmp_path / 'profile.json', {'mode': 'offline', 'name': 'OldPlayer', 'id': 'old-id'})
+    window = MainWindow(tmp_path, load_config(), network=False)
+    opened = []
+    monkeypatch.setattr(window, 'open_community_account', lambda: opened.append(True))
+    window.play_clicked()
+    assert opened == [True]
+    assert window.job is None
+    assert window.community_accounts.path.name == 'firebase-account.dpapi'
+    assert (tmp_path / 'profile.json').exists()
+    window.close()

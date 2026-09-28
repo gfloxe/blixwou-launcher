@@ -1,4 +1,4 @@
-"""Non-blocking community account dialog; independent from Minecraft profiles."""
+"""Non-blocking BLIXWOU account dialog used before launching Minecraft."""
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
