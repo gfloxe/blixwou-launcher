@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Échec de la préparation WinSparkle.' }
 & $python tools\collect_licenses.py
 & $python -m pytest -q
 if ($LASTEXITCODE -ne 0) { throw 'Les tests ont échoué.' }
-& $python -m PyInstaller --noconfirm --windowed --onedir --name BLIXWOU --icon assets\blixwou.ico --add-data 'assets;assets' --add-data 'launcher-config.json;.' --add-data 'docs;docs' --add-data 'vendor/WinSparkle.dll;vendor' --add-data 'vendor/COPYING;vendor' --add-data 'vendor/COPYING.expat;vendor' --collect-data minecraft_launcher_lib run.py
+& $python -m PyInstaller --noconfirm --windowed --onedir --name BLIXWOU --icon assets\blixwou.ico --add-data 'assets;assets' --add-data 'launcher-config.json;.' --add-data 'docs;docs' --add-data 'vendor/winsparkle-tool.exe;vendor' --add-data 'vendor/COPYING;vendor' --add-data 'vendor/COPYING.expat;vendor' --collect-data minecraft_launcher_lib run.py
 if ($LASTEXITCODE -ne 0) { throw 'Échec de PyInstaller.' }
 & $python tools\normalize_runtime.py
 if ($LASTEXITCODE -ne 0) { throw 'Échec de la préparation du runtime Visual C++.' }

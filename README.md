@@ -1,6 +1,6 @@
 # BLIXWOU — launcher Minecraft Java pour Windows x64
 
-Application native en français, exclusivement configurée pour `BLIXWOU.exaroton.me:48255`. Le projet contient l’interface Qt, l’installation réelle de Minecraft/NeoForge/Java, la connexion Firebase BLIXWOU, la mise à jour du pack, WinSparkle et le script d’installateur Inno Setup.
+Application native en français, exclusivement configurée pour `BLIXWOU.exaroton.me:48255`. Le projet contient l’interface Qt, l’installation réelle de Minecraft/NeoForge/Java, la connexion Firebase BLIXWOU, la mise à jour du pack, un écran de mise à jour du launcher et le script d’installateur Inno Setup.
 
 **Migration Minecraft 1.21.1 / NeoForge 21.1.250.** Le launcher utilise Java 21 et synchronise le pack GitHub à chaque lancement. Le dépôt doit publier un manifeste correspondant à cette version. Jouer exige désormais un compte Firebase BLIXWOU avec un pseudo réservé ; le profil de jeu reste de type hors ligne et nécessite une configuration compatible du serveur. Voir [les limites de la vérification côté launcher](docs/FIREBASE.md).
 
@@ -30,7 +30,7 @@ Le fichier central est `launcher-config.json`. En développement il est à la ra
 | `microsoft.redirectUri` | Retour enregistré : `http://localhost:8765/callback` |
 | `socials` | Liens HTTPS ; laisser `null` pour masquer une icône |
 | `launcherUpdate.appcastUrl` | URL HTTPS du flux des versions du launcher |
-| `launcherUpdate.ed25519PublicKey` | Clé publique de signature WinSparkle, jamais la clé privée |
+| `launcherUpdate.ed25519PublicKey` | Clé publique de signature des installateurs, jamais la clé privée |
 
 Les versions du pack publié et l’adresse du serveur sont autoritatives dans son manifeste. Le champ local `neoforge` sert de référence au contrôle de publication ; il ne choisit pas automatiquement une version et ne remplace pas un manifeste. Minecraft reste strictement `1.21.1`, Java `21` ; le runtime vérifie aussi le catalogue Mojang, l’existence de NeoForge et le `minecraft` de l’installateur officiel.
 
@@ -66,7 +66,7 @@ La version de l’application doit être mise à jour ensemble dans `pyproject.t
 - Statut : Server List Ping direct, toutes les 30 secondes. Une réponse protocolaire donne « En ligne », un refus de connexion « Hors ligne », un délai/DNS/réponse illisible « Indisponible ». Une réponse de proxy décrit ce point d’entrée, pas une garantie que l’authentification et tous les mods fonctionneront.
 - Pack : comparaison SHA-256 et réparation à chaque démarrage et avant Jouer. Fichiers temporaires vérifiés, sauvegardes de transaction, récupération après crash. Un fichier non géré en conflit bloque la mise à jour au lieu d’être écrasé. Les configurations `seed` sont conservées. Les anciens mods gérés retirés du manifeste sont supprimés, même modifiés, pour éviter les doublons ; les configurations et resourcepacks obsolètes modifiés restent préservés.
 - Lancement : Quick Play multijoueur vers l’adresse du manifeste ; verrou interprocessus, bouton désactivé pendant les opérations et suivi du PID/date de création de Java après crash du launcher.
-- Launcher : WinSparkle 0.9.4 x64, archive fournisseur épinglée SHA-256, mises à jour d’installateur authentifiées par Ed25519. La clé publique est embarquée. La signature Authenticode Windows est une étape de publication distincte.
+- Launcher : écran Qt dédié au téléchargement avec progression réelle, vérification Ed25519 par l’outil officiel WinSparkle puis lancement silencieux de l’installateur Inno. La clé publique est embarquée. La signature Authenticode Windows est une étape de publication distincte.
 
 ## Dossiers et guides
 

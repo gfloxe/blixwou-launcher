@@ -4,9 +4,9 @@ Le dépôt unique gfloxe/blixwou-launcher contient le code et le flux appcast.xm
 
 ## Démarrage
 
-Avant la synchronisation du pack, le launcher lit le flux via network.py (timeout réseau 5 secondes, taille bornée), compare numériquement X.Y.Z et ignore silencieusement un flux absent, invalide ou inaccessible. Si une version supérieure est disponible, il bloque Jouer et la synchronisation, affiche sa progression puis appelle WinSparkle check_update_with_ui_and_install. Les vérifications automatiques périodiques natives sont désactivées. WinSparkle contrôle la signature Ed25519 avant d’exécuter l’installateur. En cas d’erreur ou d’annulation, un message discret apparaît et le fonctionnement normal reprend.
+Avant la synchronisation du pack, le launcher lit le flux via network.py (timeout réseau 5 secondes, taille bornée), compare numériquement X.Y.Z et ignore silencieusement un flux absent, invalide ou inaccessible. Si une version supérieure est disponible, il bloque Jouer et la synchronisation et affiche son écran Qt de mise à jour. Le téléchargement indique les octets et le pourcentage réels ; l’installateur est ensuite vérifié avec l’outil officiel WinSparkle et la clé publique Ed25519 embarquée. Un échec laisse le choix entre Réessayer et Continuer sans mettre à jour. Aucune version du pack n’est téléchargée pendant cet écran.
 
-Les callbacks empêchent un arrêt pendant une partie ou une synchronisation. L’installateur silencieux relance BLIXWOU via WizardSilent ; le chemin interactif conserve la case Ouvrir BLIXWOU. Aucune donnée joueur n’est supprimée.
+Le launcher ne démarre pas la mise à jour pendant une partie ou une synchronisation. L’installateur silencieux relance BLIXWOU via WizardSilent ; le chemin interactif conserve la case Ouvrir BLIXWOU. Aucune donnée joueur n’est supprimée.
 
 ## Préparer sans publier
 
@@ -36,10 +36,10 @@ Conserver output/appcast-0.1.2.xml et l’installateur correspondant. Cette repr
 .venv\Scripts\python.exe tools\test_update_e2e.py
 ```
 
-Le test construit un petit exécutable témoin avec le compilateur .NET présent dans Windows, utilise une clé jetable hors du dossier HTTP public et une identité de registre unique. Aucun clic n’est envoyé. Le flux HTTP local est accepté par WinSparkle ; seule cette procédure de test autorise HTTP, le launcher conserve HTTPS obligatoire.
+Le test construit un petit exécutable témoin avec le compilateur .NET présent dans Windows et utilise une clé jetable hors du dossier HTTP public. Aucun clic n’est envoyé. Le flux HTTP local est accepté uniquement par cette procédure de test ; le launcher conserve HTTPS obligatoire. Aucune clé de registre n’est créée par ce test.
 
-Résultat du 13 septembre 2026 : même version ignorée (aucun témoin), nouvelle version installée sans clic (témoin créé, callback shutdown), signature altérée refusée (callback error, aucun témoin). Les seules clés de registre de test sont supprimées. Les résultats sont dans output/update-e2e-results.json.
+Le test vérifie qu’une version identique est ignorée, qu’une nouvelle version signée est téléchargée puis lancée sans clic et qu’un fichier altéré est refusé. Les résultats sont dans output/update-e2e-results.json.
 
-Ce test prouve le lancement automatique d’un installateur signé. Il ne remplace pas le test d’une vraie migration BLIXWOU 0.1.1 vers 0.1.2, de la relance Inno et de la conservation des données pendant cette migration. La 0.1.2 n’est pas publiée par ces travaux.
+Ce test prouve le lancement automatique d’un installateur signé. Il ne remplace pas le test d’une vraie migration entre deux versions installées de BLIXWOU, de la relance Inno et de la conservation des données pendant cette migration.
 
-Les joueurs en 0.1.0 doivent installer manuellement la première version configurée. La version 0.1.1 possède encore l’ancien mécanisme de vérification. Le comportement automatique décrit ici sera embarqué dans une future version. L’installateur n’est pas signé Authenticode : SmartScreen peut afficher un avertissement ; Ed25519 est une protection distincte.
+Les versions déjà installées utilisent leur mécanisme de mise à jour embarqué pour télécharger la première release contenant ce nouvel écran. L’installateur n’est pas signé Authenticode : SmartScreen peut afficher un avertissement ; Ed25519 est une protection distincte.

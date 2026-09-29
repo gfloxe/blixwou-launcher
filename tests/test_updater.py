@@ -30,34 +30,52 @@ def test_winsparkle_signature_rejects_modified_installer(tmp_path):
     dll.win_sparkle_set_eddsa_public_key.restype = ctypes.c_int
     assert dll.win_sparkle_set_eddsa_public_key(public.encode("ascii")) == 1
 
-def test_updater_installs_only_after_explicit_preflight(monkeypatch):
-    from blixwou.updater import LauncherUpdater
-    import json
+@pytest.mark.skipif(not TOOL.exists(), reason="Run tools/bootstrap_vendor.py for the native signature test")
+def test_download_promotes_only_the_signed_installer(tmp_path, monkeypatch):
+    from blixwou import updater
+
+    def run(*args):
+        return subprocess.run([str(TOOL), *map(str, args)], capture_output=True,
+                              text=True, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+
+    key = tmp_path / 'throwaway.key'
+    source = tmp_path / 'source.bin'
+    source.write_bytes(b'isolated signed update')
+    generated = run('generate-key', '--file', key)
+    assert generated.returncode == 0
+    public = re.search(r'Public key:\s*([A-Za-z0-9+/=]+)', generated.stdout).group(1)
+    signed = run('sign', '--private-key-file', key, source)
+    signature = re.search(r'[A-Za-z0-9+/]{86}==', signed.stdout).group(0)
+    info = updater.UpdateInfo('1.9.3', 'https://example.org/installer.exe', source.stat().st_size, signature)
+
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def iter_content(self, size): yield source.read_bytes()
+
+    monkeypatch.setattr(updater, 'request', lambda *args, **kwargs: Response())
+    progress = []
+    target = updater.download_verified(tmp_path, info, public, lambda *args: progress.append(args))
+    assert target.read_bytes() == source.read_bytes()
+    assert progress[-1][0] == 'Vérification de la signature'
+    target.unlink()
+    source.write_bytes(b'isolated signed updAte')
+    with pytest.raises(updater.LauncherError, match='Signature'):
+        updater.download_verified(tmp_path, info, public, lambda *args: None)
+    assert not target.exists()
+
+
+def test_installer_start_requires_a_file(tmp_path, monkeypatch):
+    from blixwou import updater
+    with pytest.raises(updater.LauncherError, match='introuvable'):
+        updater.start_installer(tmp_path / 'missing.exe')
+    installer = tmp_path / 'signed.exe'
+    installer.write_bytes(b'fixture')
     calls = []
-    class Function:
-        def __init__(self, name): self.name = name
-        def __call__(self, *args):
-            calls.append((self.name, args))
-            return 1
-    class DLL:
-        def __getattr__(self, name):
-            fn = Function(name)
-            setattr(self, name, fn)
-            return fn
-    dll = DLL()
-    monkeypatch.setattr(ctypes, 'CDLL', lambda path: dll)
-    config = json.loads((ROOT / 'launcher-config.json').read_text())
-    updater = LauncherUpdater(config['launcherUpdate'], config['appVersion'], lambda: False, lambda: None)
-    assert not any('check_update' in name for name, args in calls)
-    updater.install()
-    names = [name for name, args in calls]
-    assert names.index('win_sparkle_set_automatic_check_for_updates') < names.index('win_sparkle_init') < names.index('win_sparkle_check_update_with_ui_and_install')
-    assert dict(calls)['win_sparkle_set_automatic_check_for_updates'] == (0,)
-    assert updater.can_cb() == 0
-    assert dll.win_sparkle_check_update_with_ui_and_install.argtypes == []
-    assert dll.win_sparkle_set_automatic_check_for_updates.argtypes == [ctypes.c_int]
-    updater.close()
-    assert calls[-1][0] == 'win_sparkle_cleanup'
+    monkeypatch.setattr(updater.subprocess, 'Popen', lambda *args, **kwargs: calls.append((args, kwargs)))
+    updater.start_installer(installer)
+    assert calls[0][0][0][0] == str(installer)
+    assert '/SILENT' in calls[0][0][0]
 
 
 @pytest.mark.parametrize('new,old,expected', [('0.1.10','0.1.9',True),('1.0.0','0.99.99',True),('0.1.1','0.1.1',False),('0.1.0','0.1.1',False)])
@@ -107,10 +125,11 @@ def test_update_failure_reactivates_launcher(tmp_path, monkeypatch):
     window.start_job(lambda *args:None,lambda *args:None)
     assert window.job is None
     window.update_failed('Échec de mise à jour')
-    assert window.play.isEnabled() and not window.updating
-    assert resumed==[True]
+    assert window.updating and not window.play.isEnabled()
+    assert not window.update_screen.retry_button.isHidden()
     assert window.update_notice.text()=='Échec de mise à jour'
-    window.update_failed('Duplicate callback')
+    window.continue_after_update_failure()
+    assert window.play.isEnabled() and not window.updating
     assert resumed==[True]
     window.close()
 

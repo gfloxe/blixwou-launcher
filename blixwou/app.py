@@ -21,7 +21,8 @@ from .network import https_url
 from .pack import PackManager
 from .status import server_status
 from .home_ui import GlowButton, dark_titlebar, skin_head, cached_news, fetch_news
-from .updater import LauncherUpdater, available_update
+from .updater import available_update, download_verified, fetch_update, start_installer
+from .update_ui import UpdateScreen
 from .process_guard import require_game_stopped
 
 STYLE = """
@@ -403,10 +404,11 @@ class MainWindow(QMainWindow):
         self.maintenance_job = None
         self.integrity_cache = {}
         self.repair_pending = False
-        self.updater = None
+        self.update_job = None
+        self.installing_update = False
         self.updating = False
         self.update_check = None
-        self.update_version = None
+        self.update_info = None
         self.closing = False
         self.game_ready = False
         self.game_ready_observations = 0
@@ -460,6 +462,10 @@ class MainWindow(QMainWindow):
         shell_layout.addLayout(nav)
         self.pages = QStackedWidget()
         self.pages.addWidget(scene)
+        self.update_screen = UpdateScreen(config['appVersion'])
+        self.update_screen.retry_button.clicked.connect(self.retry_update)
+        self.update_screen.continue_button.clicked.connect(self.continue_after_update_failure)
+        self.pages.addWidget(self.update_screen)
         shell_layout.addWidget(self.pages)
         self.wardrobe_page = None
         self.home_button.clicked.connect(lambda: self.pages.setCurrentIndex(0))
@@ -624,14 +630,15 @@ class MainWindow(QMainWindow):
         self.check_status()
         self.updating = True
         self.update_controls(False)
-        self.update_check = Worker(lambda progress, cancelled: available_update(
+        self.update_check = Worker(lambda progress, cancelled: fetch_update(
             self.config['launcherUpdate'].get('appcastUrl'), self.config['appVersion']), self)
-        self.update_check.success.connect(lambda value: setattr(self, 'update_version', value))
+        self.update_check.success.connect(lambda value: setattr(self, 'update_info', value))
         self.update_check.finished.connect(self.update_checked)
         self.update_check.start()
 
     def update_controls(self, enabled):
-        for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
+        for widget in (self.play, self.profile, self.settings_button, self.home_button,
+                       self.wardrobe_button, self.community_button):
             widget.setEnabled(enabled)
         if self.wardrobe_page is not None:
             self.wardrobe_page.setEnabled(enabled)
@@ -650,34 +657,67 @@ class MainWindow(QMainWindow):
         self.update_check = None
         if self.closing:
             return
-        if not self.update_version or not self.can_update_shutdown():
+        if not self.update_info or not self.can_update_shutdown():
             self.updating = False
             self.update_controls(True)
             self.startup_pack()
             return
-        self.show_operation('update', 'Mise à jour du launcher',
-                            'Installation sécurisée de BLIXWOU ' + self.update_version, 0, 0)
+        self.start_update_download()
+
+    def start_update_download(self):
+        info = self.update_info
+        self.updating = True
+        self.update_controls(False)
+        self.update_screen.set_version(self.config['appVersion'], info.version)
+        self.update_screen.subtitle.setText('Le launcher va se mettre à jour automatiquement.')
+        self.update_screen.error.hide()
+        self.update_screen.retry_button.hide()
+        self.update_screen.continue_button.hide()
+        self.update_screen.set_stage(1)
+        self.update_screen.set_progress('Téléchargement du launcher', 0, info.size)
+        self.pages.setCurrentWidget(self.update_screen)
+        job = Worker(lambda progress, cancelled: download_verified(
+            self.root, info, self.config['launcherUpdate']['ed25519PublicKey'], progress), self)
+        self.update_job = job
+        job.progress.connect(self.update_screen.set_progress)
+        job.success.connect(self.install_update)
+        job.failure.connect(self.update_failed)
+        def finished():
+            self.update_job = None
+            job.deleteLater()
+            if self.installing_update:
+                QTimer.singleShot(0, self.close)
+        job.finished.connect(finished)
+        job.start()
+
+    def install_update(self, path):
+        self.update_screen.set_progress('Installation de BLIXWOU ' + self.update_info.version, 0, 0)
         try:
-            self.updater = LauncherUpdater(self.config['launcherUpdate'], self.config['appVersion'],
-                self.can_update_shutdown, self.shutdown_requested.emit,
-                lambda: self.update_problem.emit('Mise à jour indisponible. Vous pouvez continuer à jouer.'),
-                lambda: self.update_problem.emit('Mise à jour interrompue. Vous pouvez continuer à jouer.'))
-            self.updater.install()
-        except Exception:
-            self.update_failed('Mise à jour indisponible. Vous pouvez continuer à jouer.')
+            start_installer(path)
+        except LauncherError as error:
+            self.update_failed(str(error))
+            return
+        self.installing_update = True
+
+    def retry_update(self):
+        if self.update_job is not None or self.closing or not self.can_update_shutdown():
+            return
+        self.start_update_download()
+
+    def continue_after_update_failure(self):
+        if self.update_job is not None:
+            return
+        self.updating = False
+        self.update_controls(True)
+        self.pages.setCurrentIndex(0)
+        self.startup_pack()
 
     def update_failed(self, message):
         if not self.updating or self.closing:
             return
-        self.updating = False
-        if self.updater:
-            self.updater.close()
-            self.updater = None
         self.update_notice.setText(message)
         self.update_notice.show()
-        self.hide_operation()
-        self.update_controls(True)
-        self.startup_pack()
+        self.update_screen.show_error(message)
 
     def startup_pack(self):
         if self.config.get("manifestUrl"):
@@ -998,8 +1038,8 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentWidget(self.wardrobe_page)
 
     def refresh_navigation(self, index):
-        self.home_button.setChecked(index == 0)
-        self.wardrobe_button.setChecked(index != 0)
+        self.home_button.setChecked(self.pages.currentWidget() is self.pages.widget(0))
+        self.wardrobe_button.setChecked(self.pages.currentWidget() is self.wardrobe_page)
         self.refresh_profile()
 
     def show_news(self, items):
@@ -1047,6 +1087,11 @@ class MainWindow(QMainWindow):
             event.ignore()
             self.hide_to_tray()
             return
+        if self.update_job and self.update_job.isRunning():
+            QMessageBox.information(self, "Mise à jour BLIXWOU",
+                                    "Attendez la fin du téléchargement sécurisé avant de fermer le launcher.")
+            event.ignore()
+            return
         if self.busy:
             if self.job:
                 self.job.requestInterruption()  # Cancels pending OAuth only.
@@ -1077,8 +1122,6 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 QTimer.singleShot(250, self.close)
                 return
-        if self.updater:
-            self.updater.close()
         event.accept()
 
 

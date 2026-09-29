@@ -1,21 +1,38 @@
-"""WinSparkle native update engine; update authenticity via pinned Ed25519 key."""
+"""Signed launcher updates with progress reported to the BLIXWOU interface."""
 import base64
-import ctypes
+from dataclasses import dataclass
+import os
+from pathlib import Path
 import re
+import subprocess
 import time
 import xml.etree.ElementTree as ET
+
 from .config import LauncherError, resource
 from .network import https_url, request
 
 
+NAMESPACE = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
+MAX_INSTALLER_SIZE = 250 * 1024 * 1024
+HIDDEN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+
+@dataclass(frozen=True)
+class UpdateInfo:
+    version: str
+    url: str
+    size: int
+    signature: str
+
+
 def version_tuple(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}", value):
-        raise ValueError("Version X.Y.Z attendue")
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}', value):
+        raise ValueError('Version X.Y.Z attendue')
     return tuple(map(int, value.split('.')))
 
 
-def available_update(url, current):
-    """Fail open for playing, never for installing: WinSparkle verifies the binary."""
+def fetch_update(url, current):
+    """Read bounded RSS metadata; invalid or unavailable feeds never block play."""
     try:
         current_version = version_tuple(current)
         started = time.monotonic()
@@ -29,78 +46,98 @@ def available_update(url, current):
             return None
         root = ET.fromstring(data)
         found = []
-        ns = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
         for item in root.findall('./channel/item'):
-            value = item.findtext(ns + 'version')
             enclosure = item.find('enclosure')
             if enclosure is None:
                 continue
-            value = value or enclosure.get(ns + 'version')
-            if version_tuple(value) > current_version:
-                https_url(enclosure.attrib['url'])
-                if len(base64.b64decode(enclosure.attrib[ns+'edSignature'], validate=True)) == 64:
-                    found.append(value)
-        return max(found, key=version_tuple) if found else None
+            value = item.findtext(NAMESPACE + 'version') or enclosure.get(NAMESPACE + 'version')
+            if version_tuple(value) <= current_version:
+                continue
+            download_url = https_url(enclosure.attrib['url'])
+            signature = enclosure.attrib[NAMESPACE + 'edSignature']
+            if len(base64.b64decode(signature, validate=True)) != 64:
+                continue
+            size = int(enclosure.attrib['length'])
+            if not 0 < size <= MAX_INSTALLER_SIZE:
+                continue
+            found.append(UpdateInfo(value, download_url, size, signature))
+        return max(found, key=lambda item: version_tuple(item.version)) if found else None
     except Exception:
         return None
 
 
-class LauncherUpdater:
-    def __init__(self, config, version, can_shutdown, request_shutdown, on_error=lambda: None, on_cancelled=lambda: None, *, identity=('gfloxe', 'BLIXWOU')):
-        self.dll = None
-        if not config.get("appcastUrl") and not config.get("ed25519PublicKey"):
-            return
-        url = https_url(config.get("appcastUrl"))
+def available_update(url, current):
+    info = fetch_update(url, current)
+    return info.version if info else None
+
+
+def verify_installer(path: Path, info: UpdateInfo, public_key: str):
+    """Use the publisher's Ed25519 verifier, never trust an unverified download."""
+    tool = resource('vendor/winsparkle-tool.exe')
+    try:
+        if len(base64.b64decode(public_key, validate=True)) != 32 or not tool.is_file():
+            raise ValueError()
+        result = subprocess.run(
+            [str(tool), 'verify', '--public-key', public_key,
+             '--signature', info.signature, str(path)],
+            capture_output=True, creationflags=HIDDEN, timeout=45, check=False,
+        )
+        if result.returncode != 0:
+            raise ValueError()
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        raise LauncherError('Signature de la mise à jour invalide. Installation annulée.') from None
+
+
+def download_verified(root: Path, info: UpdateInfo, public_key: str, progress):
+    """Download to a private staging file and promote only after signature checks."""
+    folder = root / 'updates'
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f'BLIXWOU-Setup-{info.version}-x64.exe'
+    if target.is_file() and target.stat().st_size == info.size:
         try:
-            if len(base64.b64decode(config["ed25519PublicKey"], validate=True)) != 32:
-                raise ValueError()
-        except (KeyError, ValueError):
-            raise LauncherError("La clé publique Ed25519 du launcher est invalide.") from None
-        path = resource("vendor/WinSparkle.dll")
-        if not path.is_file():
-            raise LauncherError("WinSparkle.dll manque ; reconstruisez la distribution du launcher.")
-        dll = ctypes.CDLL(str(path))
-        signatures = {
-            "win_sparkle_set_appcast_url": [ctypes.c_char_p],
-            "win_sparkle_set_eddsa_public_key": [ctypes.c_char_p],
-            "win_sparkle_set_app_details": [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p],
-            "win_sparkle_set_lang": [ctypes.c_char_p],
-            "win_sparkle_init": [], "win_sparkle_cleanup": [],
-            "win_sparkle_set_automatic_check_for_updates": [ctypes.c_int],
-            "win_sparkle_check_update_with_ui_and_install": [],
-        }
-        for name, args in signatures.items():
-            getattr(dll, name).argtypes = args
-            getattr(dll, name).restype = None
-        dll.win_sparkle_set_eddsa_public_key.restype = ctypes.c_int
-        self.can_cb = ctypes.CFUNCTYPE(ctypes.c_int)(lambda: int(can_shutdown()))
-        self.shutdown_cb = ctypes.CFUNCTYPE(None)(request_shutdown)
-        dll.win_sparkle_set_can_shutdown_callback.argtypes = [type(self.can_cb)]
-        dll.win_sparkle_set_shutdown_request_callback.argtypes = [type(self.shutdown_cb)]
-        dll.win_sparkle_set_can_shutdown_callback(self.can_cb)
-        dll.win_sparkle_set_shutdown_request_callback(self.shutdown_cb)
-        self.error_cb = ctypes.CFUNCTYPE(None)(on_error)
-        self.cancelled_cb = ctypes.CFUNCTYPE(None)(on_cancelled)
-        for name, callback in [('win_sparkle_set_error_callback', self.error_cb),
-                               ('win_sparkle_set_update_cancelled_callback', self.cancelled_cb),
-                               ('win_sparkle_set_did_not_find_update_callback', self.cancelled_cb)]:
-            getattr(dll, name).argtypes = [type(callback)]
-            getattr(dll, name).restype = None
-            getattr(dll, name)(callback)
-        dll.win_sparkle_set_app_details(*identity, version)
-        dll.win_sparkle_set_appcast_url(url.encode("utf-8"))
-        if dll.win_sparkle_set_eddsa_public_key(config["ed25519PublicKey"].encode("ascii")) != 1:
-            raise LauncherError("WinSparkle a refusé la clé publique de mise à jour.")
-        dll.win_sparkle_set_lang(b"fr")
-        dll.win_sparkle_set_automatic_check_for_updates(0)
-        dll.win_sparkle_init()
-        self.dll = dll
+            verify_installer(target, info, public_key)
+            progress('Téléchargement déjà vérifié', info.size, info.size)
+            return target
+        except LauncherError:
+            target.unlink()
+    partial = target.with_suffix('.download')
+    partial.unlink(missing_ok=True)
+    received = 0
+    try:
+        with request('GET', info.url, timeout=(10, 45), stream=True) as response:
+            with partial.open('wb') as output:
+                for chunk in response.iter_content(256 * 1024):
+                    if not chunk:
+                        continue
+                    received += len(chunk)
+                    if received > info.size:
+                        raise LauncherError('La taille de la mise à jour est incorrecte.')
+                    output.write(chunk)
+                    progress('Téléchargement du launcher', received, info.size)
+                output.flush()
+                os.fsync(output.fileno())
+        if received != info.size:
+            raise LauncherError('Le téléchargement du launcher est incomplet.')
+        progress('Vérification de la signature', 0, 0)
+        verify_installer(partial, info, public_key)
+        os.replace(partial, target)
+        return target
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
 
-    def install(self):
-        if self.dll:
-            self.dll.win_sparkle_check_update_with_ui_and_install()
 
-    def close(self):
-        if self.dll:
-            self.dll.win_sparkle_cleanup()
-            self.dll = None
+def start_installer(path: Path):
+    """The signed Inno Setup package closes the old launcher and opens the new one."""
+    if not path.is_file():
+        raise LauncherError('Installateur de mise à jour introuvable.')
+    try:
+        subprocess.Popen(
+            [str(path), '/SILENT', '/SP-', '/NOICONS', '/SUPPRESSMSGBOXES',
+             '/CLOSEAPPLICATIONS', '/NORESTART'],
+            cwd=path.parent, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=HIDDEN,
+        )
+    except OSError:
+        raise LauncherError('Impossible de démarrer l’installation de la mise à jour.') from None
