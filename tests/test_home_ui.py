@@ -64,9 +64,9 @@ def test_periodic_maintenance_result_repairs_only_when_needed(tmp_path, monkeypa
     window = MainWindow(tmp_path, load_config(), network=False)
     started = []
     monkeypatch.setattr(window, 'start_job', lambda task, done: started.append((task, done)))
-    window.maintenance_ready({'manifest': {}, 'issues': [], 'cache': {'x': (1, 2, 'a')}, 'update': None})
+    window.maintenance_ready({'manifest': {}, 'issues': [], 'cache': {'x': (1, 2, 'a')}})
     assert window.step.text() == 'Pack vérifié · à jour'
     assert not started
-    window.maintenance_ready({'manifest': {}, 'issues': ['mods/a.jar'], 'cache': {}, 'update': None})
+    window.maintenance_ready({'manifest': {}, 'issues': ['mods/a.jar'], 'cache': {}})
     assert window.repair_pending and len(started) == 1
     window.close()

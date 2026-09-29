@@ -21,7 +21,7 @@ from .network import https_url
 from .pack import PackManager
 from .status import server_status
 from .home_ui import GlowButton, dark_titlebar, skin_head, cached_news, fetch_news
-from .updater import available_update, download_verified, fetch_update, start_installer
+from .updater import download_verified, fetch_update, start_installer
 from .update_ui import UpdateScreen
 from .process_guard import require_game_stopped
 
@@ -621,20 +621,44 @@ class MainWindow(QMainWindow):
         self.maintenance_timer = QTimer(self)
         self.maintenance_timer.setInterval(5000)
         self.maintenance_timer.timeout.connect(self.check_maintenance)
+        self.launcher_update_timer = QTimer(self)
+        self.launcher_update_timer.setInterval(5000)
+        self.launcher_update_timer.timeout.connect(self.check_launcher_update)
         if network:
             self.timer.start()
             self.maintenance_timer.start()
+            self.launcher_update_timer.start()
             QTimer.singleShot(0, self.startup)
 
     def startup(self):
         self.check_status()
         self.updating = True
         self.update_controls(False)
-        self.update_check = Worker(lambda progress, cancelled: fetch_update(
+        self.check_launcher_update(startup=True)
+
+    def check_launcher_update(self, startup=False):
+        if self.update_check is not None or self.closing or (self.updating and not startup):
+            return
+        job = Worker(lambda progress, cancelled: fetch_update(
             self.config['launcherUpdate'].get('appcastUrl'), self.config['appVersion']), self)
-        self.update_check.success.connect(lambda value: setattr(self, 'update_info', value))
-        self.update_check.finished.connect(self.update_checked)
-        self.update_check.start()
+        self.update_check = job
+        job.success.connect(self.launcher_update_found)
+        job.finished.connect(self.update_checked)
+        job.start()
+
+    def launcher_update_found(self, info):
+        self.update_info = info
+        if info is not None:
+            self.update_notice.setText('Mise à jour du launcher disponible : ' + info.version)
+            self.update_notice.show()
+        elif not self.updating:
+            self.update_notice.hide()
+        self.refresh_play_button()
+
+    def refresh_play_button(self):
+        if self.game_session.process is not None:
+            return
+        self.play.setText('Mettre à jour  ↗' if self.update_info else 'Jouer  ›')
 
     def update_controls(self, enabled):
         for widget in (self.play, self.profile, self.settings_button, self.home_button,
@@ -657,12 +681,10 @@ class MainWindow(QMainWindow):
         self.update_check = None
         if self.closing:
             return
-        if not self.update_info or not self.can_update_shutdown():
+        if self.updating:
             self.updating = False
             self.update_controls(True)
             self.startup_pack()
-            return
-        self.start_update_download()
 
     def start_update_download(self):
         info = self.update_info
@@ -777,8 +799,7 @@ class MainWindow(QMainWindow):
             manager = PackManager(self.root)
             manifest = manager.fetch_manifest(self.config["manifestUrl"], fresh=True)
             issues, verified = manager.audit(manifest, cache)
-            version = available_update(self.config['launcherUpdate'].get('appcastUrl'), self.config['appVersion'])
-            return {"manifest": manifest, "issues": issues, "cache": verified, "update": version}
+            return {"manifest": manifest, "issues": issues, "cache": verified}
         job = Worker(inspect, self)
         self.maintenance_job = job
         job.success.connect(self.maintenance_ready)
@@ -792,9 +813,6 @@ class MainWindow(QMainWindow):
         self.manifest = result["manifest"]
         self.integrity_cache = result["cache"]
         self.refresh_socials()
-        if result["update"]:
-            self.update_notice.setText("Mise à jour du launcher disponible : " + result["update"])
-            self.update_notice.show()
         if not result["issues"]:
             if not self.busy:
                 self.step.setText("Pack vérifié · à jour")
@@ -909,7 +927,7 @@ class MainWindow(QMainWindow):
             self.wardrobe_page.setEnabled(True)
         self.busy = False
         self.repair_pending = False
-        self.play.setText("Jouer  ›")
+        self.refresh_play_button()
         for widget in (self.play, self.profile, self.settings_button, self.wardrobe_button, self.community_button):
             widget.setEnabled(True)
         self.hide_operation()
@@ -921,6 +939,12 @@ class MainWindow(QMainWindow):
             return
         if self.game_session.process is not None:
             self.stop_game()
+            return
+        if self.update_info is not None:
+            if self.can_update_shutdown():
+                self.start_update_download()
+            else:
+                self.show_error('Fermez Minecraft avant de mettre à jour BLIXWOU.')
             return
         if not self.config.get("manifestUrl"):
             self.show_error("Le pack du serveur BLIXWOU n’est pas encore disponible. Ses mods et sa configuration doivent être ajoutés avant de jouer. Vous pouvez déjà connecter votre compte BLIXWOU.")
@@ -1105,6 +1129,7 @@ class MainWindow(QMainWindow):
             return
         self.timer.stop()
         self.maintenance_timer.stop()
+        self.launcher_update_timer.stop()
         self.game_ready_timer.stop()
         self.tray_animation.stop()
         self.tray.hide()

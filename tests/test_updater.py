@@ -134,6 +134,25 @@ def test_update_failure_reactivates_launcher(tmp_path, monkeypatch):
     window.close()
 
 
+def test_periodic_update_replaces_play_button_and_starts_download(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from blixwou.app import MainWindow
+    from blixwou.config import load_config
+    from blixwou.updater import UpdateInfo
+    app = QApplication.instance() or QApplication([])
+    window = MainWindow(tmp_path, load_config(), network=False)
+    info = UpdateInfo('1.9.3', 'https://example.org/installer.exe', 100, 'signature')
+    started = []
+    monkeypatch.setattr(window, 'start_update_download', lambda: started.append(True))
+    window.launcher_update_found(info)
+    assert window.play.text().startswith('Mettre à jour')
+    window.play_clicked()
+    assert started == [True]
+    window.launcher_update_found(None)
+    assert window.play.text().startswith('Jouer')
+    window.close()
+
+
 def test_versions_share_config_source(monkeypatch, tmp_path):
     import json, tomllib
     from blixwou import minecraft
