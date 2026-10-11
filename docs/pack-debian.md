@@ -1,25 +1,14 @@
-# Source de synchronisation Debian
+# Pack Debian
 
-Le launcher utilise en priorité `https://debian-machine.tail7d0337.ts.net:8443/pack/manifest.json`.
-GitHub reste la source de publication du pack et le secours réseau du launcher.
-Cette configuration concerne le pack (mods, configurations, textures, shaders), pas les mises à jour de l'exécutable.
+La source principale est maintenant Syncora, hébergé sur Debian.
+Voir [Syncora Debian](syncora-debian.md) pour l’administration, les dossiers,
+la publication et la copie GitHub automatique.
 
-Sur Debian, `/home/alex/BLIXWOU-Services/pack` contient le manifeste et les objets identifiés par SHA-256.
-Le timer utilisateur `blixwou-pack-mirror.timer` démarre après le boot puis rafraîchit le miroir toutes les 60 secondes après la fin du précédent passage.
-Il conserve le manifeste précédent en cas d'échec et ne publie le nouveau qu'après vérification de tous les fichiers.
-Les anciennes empreintes restent disponibles pour les téléchargements en cours ; surveiller l'espace disque à long terme.
+Le launcher télécharge `/pack/manifest.json` puis les objets SHA256 du miroir.
+En cas d’indisponibilité, il consulte le manifeste GitHub. Les fichiers de secours
+sont toujours vérifiés avec la taille et le SHA256 attendus.
 
-La passerelle publique expose uniquement le manifeste et les objets dont le nom est une empreinte hexadécimale.
-Elle ne donne accès ni aux comptes ni au répertoire privé contenant les secrets.
-Le launcher vérifie les mêmes tailles et SHA-256 pour Debian et pour le secours GitHub.
-
-Diagnostic sans sudo :
-
-```sh
-systemctl --user status blixwou-pack-mirror.timer
-journalctl --user -u blixwou-pack-mirror.service -n 20
-systemctl --user start blixwou-pack-mirror.service
-```
-
-Les services restent activables au démarrage grâce à `Linger=yes` pour alex.
-Les launchers déjà installés restent sur GitHub tant qu'une nouvelle version n'est pas publiée.
+Le timer historique `blixwou-pack-mirror.timer` reste installé pour le bootstrap,
+mais n’importe plus GitHub quand le marqueur `pack/primary` existe. Pour restaurer
+volontairement une copie GitHub, arrêter les écritures Syncora et sauvegarder le
+pack avant de retirer ce marqueur; ce n’est pas le mode de fonctionnement normal.

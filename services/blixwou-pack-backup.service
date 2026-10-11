@@ -1,0 +1,14 @@
+[Unit]
+Description=Syncora Debian pack backup to GitHub
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/BLIXWOU-Services
+ExecStart=%h/BLIXWOU-Services/.venv/bin/python -m services.pack_backup
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/Syncora/private
+TimeoutStartSec=1800

@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Debian pack backup every minute
+
+[Timer]
+OnBootSec=30
+OnUnitInactiveSec=60
+Unit=blixwou-pack-backup.service
+
+[Install]
+WantedBy=timers.target

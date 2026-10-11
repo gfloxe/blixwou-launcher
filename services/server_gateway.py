@@ -6,15 +6,23 @@ import os
 from pathlib import Path
 
 from .api import APIError, Service
+from .pack_publish import PackPublisher
 
 
 class ServerGateway:
     def __init__(self, folder):
         self.service = Service(folder)
         self.pack_folder = Path(folder).parent / 'pack'
+        self.publisher = PackPublisher(folder, self.pack_folder)
+        self.syncora = None
 
     def __call__(self, env, start_response):
         method, path = env.get('REQUEST_METHOD'), env.get('PATH_INFO')
+        if path == '/syncora' or (path or '').startswith('/syncora/'):
+            if self.syncora is None:
+                from .syncora_admin import Syncora
+                self.syncora = Syncora(self.pack_folder.parent.parent / 'Syncora', self.pack_folder.parent)
+            return self.syncora(env, start_response)
         if method == 'GET' and (path == '/pack/manifest.json' or re.fullmatch(r'/pack/objects/[0-9a-f]{64}', path or '')):
             target = self.pack_folder / ('manifest.json' if path == '/pack/manifest.json' else 'objects/' + path.rsplit('/', 1)[1])
             try:
@@ -32,7 +40,9 @@ class ServerGateway:
                         yield block
             return chunks()
         try:
-            if (method, path) == ('GET', '/health'):
+            if path == '/v1/pack/files':
+                code, result = 200, self.publisher.handle(env)
+            elif (method, path) == ('GET', '/health'):
                 code, result = 200, {'service': 'BLIXWOU server gateway', 'ok': True}
             elif (method, path) == ('GET', '/v1/server/status'):
                 code, result = 200, self.service.status()
@@ -61,7 +71,7 @@ def main():
     os.umask(0o077)
     gateway = ServerGateway(Path.home() / 'BLIXWOU-Services' / 'private')
     serve(gateway, listen='127.0.0.1:8767', threads=4, connection_limit=50,
-          max_request_body_size=0, max_request_header_size=8192, channel_timeout=15)
+          max_request_body_size=51 * 1024 * 1024, max_request_header_size=8192, channel_timeout=60)
 
 
 if __name__ == '__main__':

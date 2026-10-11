@@ -25,6 +25,15 @@ def checksum(path):
 
 
 def refresh(folder=FOLDER):
+    from .pack_publish import pack_lock
+    with pack_lock(folder):
+        if (folder / 'primary').exists():
+            print('Debian is the primary publisher; GitHub import disabled')
+            return
+        return import_github(folder)
+
+
+def import_github(folder):
     import time
     with urlopen(SOURCE + '?mirror=' + str(int(time.time())), timeout=30) as response:
         raw = response.read(8 * 1024 * 1024 + 1)

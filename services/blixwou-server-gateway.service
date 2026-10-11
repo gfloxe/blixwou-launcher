@@ -12,6 +12,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
 ReadWritePaths=%h/BLIXWOU-Services/private
+ReadWritePaths=%h/BLIXWOU-Services/pack
+ReadWritePaths=%h/Syncora/private
 
 [Install]
 WantedBy=default.target
