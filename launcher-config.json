@@ -8,7 +8,8 @@
   "minecraft": "1.21.1",
   "neoforge": "21.1.250",
   "javaMajor": 21,
-  "manifestUrl": "https://raw.githubusercontent.com/gfloxe/BLIXWOU/main/manifest.json",
+  "manifestUrl": "https://debian-machine.tail7d0337.ts.net:8443/pack/manifest.json",
+  "manifestFallbackUrl": "https://raw.githubusercontent.com/gfloxe/BLIXWOU/main/manifest.json",
   "microsoft": {
     "clientId": "75252e49-3786-474f-ae9d-214ff6191ce9",
     "redirectUri": "http://localhost:8765/callback"

@@ -751,7 +751,7 @@ class MainWindow(QMainWindow):
 
     def sync_pack(self, progress):
         require_game_stopped(self.root)
-        return PackManager(self.root, progress).fetch_and_sync(self.config["manifestUrl"])
+        return PackManager(self.root, progress).fetch_and_sync(self.config["manifestUrl"], fallback_url=self.config.get("manifestFallbackUrl"))
 
     def pack_ready(self, manifest):
         self.manifest = manifest
@@ -797,7 +797,7 @@ class MainWindow(QMainWindow):
         cache = dict(self.integrity_cache)
         def inspect(progress, cancelled):
             manager = PackManager(self.root)
-            manifest = manager.fetch_manifest(self.config["manifestUrl"], fresh=True)
+            manifest = manager.fetch_manifest(self.config["manifestUrl"], fresh=True, fallback_url=self.config.get("manifestFallbackUrl"))
             issues, verified = manager.audit(manifest, cache)
             return {"manifest": manifest, "issues": issues, "cache": verified}
         job = Worker(inspect, self)

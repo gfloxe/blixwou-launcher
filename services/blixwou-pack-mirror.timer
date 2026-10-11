@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep the BLIXWOU pack mirror current
+
+[Timer]
+OnBootSec=20
+OnUnitInactiveSec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

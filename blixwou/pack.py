@@ -4,6 +4,7 @@ import base64
 import json
 import re
 import shutil
+import requests
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit, quote
 
@@ -74,6 +75,8 @@ def validate(manifest, root: Path, *, template=False):
         if not re.fullmatch(r"[0-9a-f]{64}", item.get("sha256", "")):
             raise LauncherError("Empreinte SHA-256 invalide.")
         https_url(item.get("url"))
+        if item.get("fallbackUrl"):
+            https_url(item["fallbackUrl"])
     # Reject file/directory collisions before any changes.
     for path in seen:
         if any("/".join(path.split("/")[:i]) in seen for i in range(1, len(path.split("/")))):
@@ -152,7 +155,7 @@ class PackManager:
         ownership = []
         for number, item in enumerate(selected, 1):
             target = safe_path(self.game, item["path"])
-            self.progress("Comparaison des fichiers avec le pack GitHub", number, len(selected))
+            self.progress("Comparaison des fichiers avec le pack BLIXWOU", number, len(selected))
             if item["policy"] == "seed" and target.exists():
                 # A seed never becomes owned merely by being present.
                 if item["path"].casefold() in previous:
@@ -176,7 +179,15 @@ class PackManager:
                 continue
             stage = self.root / "downloads" / item["sha256"]
             self.progress("Téléchargement : " + item["path"], 0, item["size"])
-            download(item["url"], stage, item["sha256"], item["size"], lambda n, t, p=item["path"]: self.progress("Téléchargement : " + p, n, t))
+            callback = lambda n, t, p=item["path"]: self.progress("Téléchargement : " + p, n, t)
+            try:
+                download(item["url"], stage, item["sha256"], item["size"], callback)
+            except LauncherError:
+                if not item.get("fallbackUrl"):
+                    raise
+                # The fallback must satisfy the same expected size and digest.
+                stage.with_name(stage.name + ".part").unlink(missing_ok=True)
+                download(item["fallbackUrl"], stage, item["sha256"], item["size"], callback)
             operations.append({"path": item["path"], "stage": str(stage), "existed": target.exists()})
         for key, item in previous.items():
             if key in current or item["policy"] == "seed":
@@ -232,7 +243,12 @@ class PackManager:
         self.progress("Fichiers hors pack : aucun", 0, 0)
         return manifest
 
-    def fetch_manifest(self, url, *, fresh=False):
+    def fetch_manifest(self, url, *, fresh=False, fallback_url=None):
+        if fallback_url:
+            try:
+                return validate(self.fetch_manifest(url, fresh=fresh), self.game)
+            except (requests.RequestException, LauncherError, ValueError, KeyError, TypeError, AttributeError):
+                return validate(self.fetch_manifest(fallback_url, fresh=fresh), self.game)
         if not url:
             raise LauncherError("Distribution à configurer : publiez le manifeste puis renseignez manifestUrl dans launcher-config.json.")
         https_url(url)
@@ -253,8 +269,8 @@ class PackManager:
             url += ('&' if parsed.query else '?') + 'blixwou_check=' + str(int(time.time()) // 5)
         return get_json(url)
 
-    def fetch_and_sync(self, url):
+    def fetch_and_sync(self, url, *, fallback_url=None):
         if not url:
             raise LauncherError("Distribution à configurer : publiez le manifeste puis renseignez manifestUrl dans launcher-config.json.")
         self.progress("Lecture du manifeste", 0, 0)
-        return self.sync(self.fetch_manifest(url))
+        return self.sync(self.fetch_manifest(url, fallback_url=fallback_url))

@@ -1,6 +1,9 @@
 """Public, server-only gateway for the Minecraft menu; no account routes."""
 from http import HTTPStatus
 import json
+import re
+import os
+from pathlib import Path
 
 from .api import APIError, Service
 
@@ -8,9 +11,26 @@ from .api import APIError, Service
 class ServerGateway:
     def __init__(self, folder):
         self.service = Service(folder)
+        self.pack_folder = Path(folder).parent / 'pack'
 
     def __call__(self, env, start_response):
         method, path = env.get('REQUEST_METHOD'), env.get('PATH_INFO')
+        if method == 'GET' and (path == '/pack/manifest.json' or re.fullmatch(r'/pack/objects/[0-9a-f]{64}', path or '')):
+            target = self.pack_folder / ('manifest.json' if path == '/pack/manifest.json' else 'objects/' + path.rsplit('/', 1)[1])
+            try:
+                stream = target.open('rb')
+            except OSError:
+                start_response('503 Service Unavailable', [('Content-Length', '0')])
+                return [b'']
+            start_response('200 OK', [('Content-Type', 'application/json' if path.endswith('.json') else 'application/octet-stream'),
+                                     ('Content-Length', str(os.fstat(stream.fileno()).st_size)),
+                                     ('Cache-Control', 'no-cache' if path.endswith('.json') else 'public, max-age=31536000, immutable'),
+                                     ('X-Content-Type-Options', 'nosniff')])
+            def chunks():
+                with stream:
+                    while block := stream.read(256 * 1024):
+                        yield block
+            return chunks()
         try:
             if (method, path) == ('GET', '/health'):
                 code, result = 200, {'service': 'BLIXWOU server gateway', 'ok': True}

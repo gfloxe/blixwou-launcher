@@ -1,0 +1,13 @@
+[Unit]
+Description=BLIXWOU public pack mirror refresh
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/BLIXWOU-Services
+ExecStart=%h/BLIXWOU-Services/.venv/bin/python -m services.pack_mirror
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ReadWritePaths=%h/BLIXWOU-Services/pack
+TimeoutStartSec=1800
